@@ -34,22 +34,22 @@ def start_proxy():
             while True:
                 history = pm3_exec("hf 14a list")
                 
-                for i in history.split('\n'):
-                    print(i)
+                #for i in history.split('\n'):
+                    #print(i)
                     #i il faut enlever l'espace et mettre en minuscule pour le proxy
-                    i_clean = i.strip().lower().replace(" ", "")
-                    s.sendall(i_clean.encode()) 
-                    time.sleep(0.1) # Petite pause pour éviter de saturer le proxy
-                    resp = s.recv(1024).decode()
+                    #i_clean = i.strip().lower().replace(" ", "")
+                    #s.sendall(i_clean.encode()) 
+                    #time.sleep(0.1) # Petite pause pour éviter de saturer le proxy
+                    #resp = s.recv(1024).decode()
                     # On injecte la réponse du proxy au lecteur
-                    print(f"[*] Injection de la réponse : {resp}")
-                    pm3_exec(f"hf 14a raw {resp}") 
+                    #print(f"[*] Injection de la réponse : {resp}")
+                    #pm3_exec(f"hf 14a raw {resp}") 
                 
                 
                 
                 #Partie pas utile en soit, juste pour affichage
                 # On cherche une commande spécifique non répondue (ex: Auth Ultralight C)
-                if "1A  00" in history:
+                if "60  00" in history:
                     print("[!] Authentification détectée !")
                     s.sendall("1a00".encode())
                     resp = s.recv(1024).decode()
