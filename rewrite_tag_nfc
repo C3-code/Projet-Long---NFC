@@ -1,0 +1,94 @@
+cat << 'EOF' > pm3_rewrite_auto.py
+import subprocess
+import time
+import os
+import glob
+
+# --- CONFIGURATION ---
+PM3_PATH = "./client/proxmark3.exe"
+PORT = "COM9"
+TEXT_TO_WRITE = "cutt.ly/8tmV3PYi" 
+# Le préfixe obligatoire pour le bloc 5
+BLOCK_5_PREFIX = "2A5502"
+
+# Chemins de logs
+LOG_SEARCH_PATHS = [
+    "../.proxmark3/logs/",
+    "../../.proxmark3/logs/",
+    os.path.expanduser("~/.proxmark3/logs/")
+]
+
+def string_to_mfu_blocks(text):
+    """Convertit une string en liste de blocs hexadécimaux pour MIFARE Ultralight."""
+    # Conversion ASCII -> HEX
+    hex_data = text.encode('utf-8').hex().upper()
+    
+    # Le bloc 5 est spécial : Préfixe (3 octets) + 1er octet du texte (2 chars hex)
+    # On prend les 2 premiers caractères hex s'ils existent, sinon 00
+    first_char_hex = hex_data[:2] if len(hex_data) >= 2 else "00"
+    remaining_hex = hex_data[2:]
+    
+    blocks = []
+    # Construction du Bloc 5
+    blocks.append(BLOCK_5_PREFIX + first_char_hex)
+    
+    # Découpage du reste par blocs de 8 caractères hex (4 octets)
+    for i in range(0, len(remaining_hex), 8):
+        chunk = remaining_hex[i:i+8]
+        # Padding avec des 0 si le bloc est incomplet
+        blocks.append(chunk.ljust(8, '0'))
+    
+    # On complète jusqu'au bloc 38 avec des zéros si nécessaire → en soit je crois qu’on peut aller jusqu’au bloc 39
+    while len(blocks) < 24: # Du bloc 5 au bloc 15 = 11 blocs
+        blocks.append("00000000")
+        
+    return blocks[:24] # On s'assure de ne pas dépasser le bloc 15
+
+def get_last_log_content():
+    for path in LOG_SEARCH_PATHS:
+        if os.path.exists(path):
+            list_of_files = glob.glob(os.path.join(path, 'log_*'))
+            if list_of_files:
+                latest_file = max(list_of_files, key=os.path.getctime)
+                with open(latest_file, "r", encoding="utf-8", errors="ignore") as f:
+                    return f.read()
+    return ""
+
+def run_pm3(commands):
+    full_cmd = [PM3_PATH, PORT, "-c", "; ".join(commands) + "; exit"]
+    subprocess.run(full_cmd)
+
+def main():
+    print(f"--- Pilotage Automatique Proxmark3 ({PORT}) ---")
+    print(f"[*] Texte à encoder : '{TEXT_TO_WRITE}'")
+    
+    # Préparation des données
+    data_blocks = string_to_mfu_blocks(TEXT_TO_WRITE)
+    passwords = ["00000000", "FFFFFFFF"]
+
+    for pwd in passwords:
+        print(f"\n[*] TENTATIVE AVEC CLÉ : {pwd}")
+        run_pm3([f"hf mfu dump --ns -k {pwd}"])
+        time.sleep(1.5)
+        
+        content = get_last_log_content()
+        if "Reading tag memory" in content and "Failed" not in content:
+            print(f"[+] DÉTECTION LOG : Clé {pwd} est VALIDE !")
+            
+            # Génération dynamique des commandes wrbl
+            write_commands = []
+            for i, hex_val in enumerate(data_blocks):
+                block_num = 5 + i
+                write_commands.append(f"hf mfu wrbl -b {block_num} -d {hex_val} -k {pwd}")
+            
+            print(f"[*] Écriture de {len(write_commands)} blocs...")
+            run_pm3(write_commands)
+            print("\n[+] Opération terminée avec succès.")
+            return
+
+    print("\n[-] Échec : Aucune clé valide trouvée.")
+
+if __name__ == "__main__":
+    main()
+EOF
+
