@@ -2,7 +2,7 @@ cat << 'EOF' > mole.py
 import subprocess
 import socket
 import re
-
+import string
 
 #Code a copier coller dans proxmark3 -
 
@@ -11,6 +11,10 @@ PM3_PATH = "./client/proxmark3.exe"
 PORT_PM3 = "COM9" 
 HOST = '127.0.0.1' 
 PORT_NET = 5555
+
+def is_hex(s):
+    hex_chars = string.hexdigits
+    return all(c in hex_chars for c in s)
 
 def pm3_exec(cmd):
     return subprocess.run([PM3_PATH, PORT_PM3, "-c", cmd], capture_output=True, text=True).stdout
@@ -35,10 +39,11 @@ def start_mole():
             conn.sendall(uid.encode())
             while True:
                 cmd_hex = conn.recv(1024).decode()
-                if not cmd_hex: break
+                if not cmd_hex : break #or not is_hex(cmd_hex)
                 
                 print(f"[>] Relais vers carte: {cmd_hex}")
                 # Envoi raw avec calcul du CRC (-c)
+                #Pb --> envoie sur la carte des commentaires qui ne sont pas des commandes
                 res = pm3_exec(f"hf 14a raw -c {cmd_hex}")
                 
                 # On cherche la ligne de réponse après 'received:'
