@@ -49,7 +49,7 @@ def start_proxy():
                 
                 #Partie pas utile en soit, juste pour affichage
                 # On cherche une commande spécifique non répondue (ex: Auth Ultralight C)
-                if "1A  00" in history:
+                if "60  00" in history:
                     print("[!] Authentification détectée !")
                     s.sendall("1a00".encode())
                     resp = s.recv(1024).decode()
