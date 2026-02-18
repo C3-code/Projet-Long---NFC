@@ -32,7 +32,51 @@ int main(int argc, char *argv[])
 	    error = EXIT_FAILURE;
 	    continue;
 	}
+
+	//Initialize reader
+
+	if (nfc_initiator_init(device) < 0) {
+		nfc_perror(device, "nfc_initiator_init");
+		exit(EXIT_FAILURE);
+	}
+
+	const nfc_modulation nm = {
+		.nmt = NMT_ISO14443A,
+		.nbr = NBR_106,
+	};
+
+	nfc_target nt;
+
+
+	if (nfc_initiator_select_passive_target(device, nm, NULL, 0, &nt) > 0) {
+		printf("UID: ");
+		for (size_t i = 0; i < nt.nti.nai.szUidLen; i++)
+			printf("%02x ", nt.nti.nai.abtUid[i]);
+		printf("\n");
+	} else {
+		printf("Aucun tag détecté\n");
+	}
+
+	/* nfc_initiator_select_passive_target : 
+	- met le device en mode initiateur
+	- envoi les reqa et wupa
+	- gere anticollision et selection du tag
+	- rempli la structure nfc_targe avec les infos du tag : uid, atqa, sak et type de tag	
+	if (nfc_initiator_select_passive_target(
+			device,
+			nm,
+			NULL,
+			0,
+			&nt) > 0) {
+
+		printf("UID: ");
+		for (size_t i = 0; i < nt.nti.nai.szUidLen; i++)
+			printf("%02x ", nt.nti.nai.abtUid[i]);
+		printf("\n");
+	}
+
 	
+	/*
 	//Initialize reader
 
 	if (nfc_initiator_init(device) < 0) {
@@ -171,7 +215,7 @@ int main(int argc, char *argv[])
 
 	if (res >= 0) {
 		printf("SAK final: %02x\n", sak);
-	}
+	}*/
 
 
 
