@@ -10,11 +10,12 @@ PORT_PROXY = "COM10"
 
 def pm3_exec_clean(port, command):
     """Lance pm3, récupère la sortie brute et extrait l'hexadécimal."""
-    full_cmd = [PM3_PATH, port, command]
+    full_cmd = [PM3_PATH, port, "; ".join(command) + "; exit"]
     
     try:
         # Exécution de la commande
         process = subprocess.run(full_cmd, capture_output=True, text=True, timeout=5)
+        #juste subprocess.run(full_cmd) dans mes codes qui marchent
         raw_output = process.stdout
         
         # FILTRAGE : On cherche les lignes qui ressemblent à de l'hexadécimal (ex: [4] 90 5a 00)
@@ -36,12 +37,12 @@ def main_relay():
     # 1. Identification du tag
     # On utilise hf 14a info pour cloner l'UID
     print(f"[*] Lecture du tag sur {PORT_MOLE}...")
-    res_info = pm3_exec_clean(PORT_MOLE, "hf 14a info")
+    res_info = pm3_exec_clean(PORT_MOLE, f"hf 14a info")
     
     # On force une recherche d'UID si l'extraction hex simple échoue
     if not res_info:
         # Fallback : on cherche spécifiquement "UID :" dans le texte brut
-        raw = subprocess.run([PM3_PATH, PORT_MOLE, "hf 14a info"], capture_output=True, text=True).stdout
+        raw = subprocess.run([PM3_PATH, PORT_MOLE, f"hf 14a info"], capture_output=True, text=True).stdout
         uid_match = re.search(r'UID\s*:\s*([A-Fa-f0-9\s]+)', raw)
         if uid_match:
             uid = uid_match.group(1).replace(" ", "").strip()
