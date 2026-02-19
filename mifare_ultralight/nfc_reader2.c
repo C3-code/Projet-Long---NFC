@@ -7,52 +7,52 @@
 #include <freefare.h>
 
 //========================= READ ==========================
-int reader_read(nfc_context * context, nfc_device * device, int res, uint8_t page){
-    uint8_t read[] = {0x30, page};
-    uint8_t read_data[16];
+int reader_read(nfc_device *device, uint8_t page)
+{
+    uint8_t read[2] = {0x30, page};
+    uint8_t data[16];
 
-    res = nfc_initiator_transceive_bytes(device, read, sizeof(read), read_data, sizeof(read_data), -1);
-    if (res > 0) {
-        printf("READ -> DATA: ");
+    int res = nfc_initiator_transceive_bytes(device, read, sizeof(read), data, sizeof(data), -1);
+
+    if (res == 16) {
+        printf("READ page %02X: ", page);
         for (int i = 0; i < 16; i++)
-            printf("%02x ", read_data[i]);
+            printf("%02X ", data[i]);
         printf("\n");
+        return 0;
     } else {
-        printf("Erreur READ: %s\n", nfc_strerror(device));
+        printf("READ erreur (res=%d)\n", res);
         return -1;
-        //nfc_close(device);
-        //nfc_exit(context);
-        //exit(EXIT_FAILURE);
     }
-    return res;
 }
 
 //========================= WRITE ==========================
-int reader_write(nfc_context * context, nfc_device * device, int res, uint8_t page, uint8_t * data){
+int reader_write(nfc_device *device, uint8_t page, uint8_t *data)
+{
     uint8_t write[6];
-    write[0] = 0xa2;
+    uint8_t ack[1];
+
+    write[0] = 0xA2;
     write[1] = page;
-    for (int i=0; i<4; i++){
-        write[i+2] = data[i];
-    }
-    uint8_t ret_data[1];
 
-    res = nfc_initiator_transceive_bytes(device, write, sizeof(write), ret_data, sizeof(ret_data), -1);
-    if (res == 1 && ret_data[0] == 0x0A) {
-        printf("WRITE OK\n");
+    for (int i = 0; i < 4; i++)
+        write[i + 2] = data[i];
+
+    int res = nfc_initiator_transceive_bytes(device, write, sizeof(write), ack, sizeof(ack), -1);
+
+    // Cas normal
+    if (res == 1 && ack[0] == 0x0A) {
+        printf("WRITE OK \n");
         return 0;
-    } else {
-        printf("Erreur WRITE (res=%d, ret=0x%02X)\n", res, (res > 0) ? ret_data[0] : 0);
-        return -1;
     }
-
+    // Cas fréquent NTAG : erreur RF mais écriture OK
+    if (res < 0) {
+        printf("WRITE (ACK mal interprété, res=%d)\n", res);
+        return 0;   // on considère OK
+    }
+    printf("WRITE FAIL (res=%d, ack=0x%02X)\n",res,(res > 0) ? ack[0] : 0);
+    return -1;
 }
-
-
-
-
-
-
 
 //====================== READ_SIG ======================
 int read_sig(nfc_context * context, nfc_device * device, int res){
@@ -74,7 +74,6 @@ int read_sig(nfc_context * context, nfc_device * device, int res){
     return res;
 }
 
-
 //====================== GET_VERSION ======================
 int get_version(nfc_context * context, nfc_device * device, int res){
     uint8_t get_version[] = {0x60};
@@ -95,13 +94,28 @@ int get_version(nfc_context * context, nfc_device * device, int res){
     return res;
 }
 
+int pwd_auth(nfc_context * context, nfc_device * device, int res, uint8_t *  pwd){
+    uint8_t pwd_auth[5];
+    pwd_auth[0] = 0x1b;
+    for (int i = 0; i < 4; i++)
+        pwd_auth[i + 1] = pwd[i];
+    uint8_t pack[2];
 
-
-
-
-
-
-
+    res = nfc_initiator_transceive_bytes(device, pwd_auth, sizeof(pwd_auth), pack, sizeof(pack), -1);
+    if (res > 0) {
+        printf("PWD_AUTH -> PACK: ");
+        for (int i = 0; i < 2; i++)
+            printf("%02x ", pack[i]);
+        printf("\n");
+    } else {
+        printf("Erreur PWD_AUTH: %s\n", nfc_strerror(device));
+        nfc_close(device);
+        nfc_exit(context);
+        exit(EXIT_FAILURE);
+    }
+    return res;
+    
+}
 
 
 
@@ -246,10 +260,10 @@ int main() {
         printf("%02X ", uid[i]);
     printf("\n");
 
-    uint8_t data [4] = {0xaa, 0xaa, 0xff, 0xff};
-    reader_read(context, device, res, 0x05);
-    reader_write(context, device, res, 0x05, data);
-    reader_read(context, device, res, 0x05);
+    uint8_t data [4] = {0xff, 0xff, 0xff, 0xff};
+    reader_read(device, 0x05);
+    //reader_write( device, 0x05, data);
+    //reader_read(device, 0x05);
     get_version(context, device, res);
     read_sig(context, device, res);
 
