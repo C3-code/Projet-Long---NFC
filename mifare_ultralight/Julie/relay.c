@@ -45,6 +45,9 @@ void start_proxy_sim(const char* uid) {
     
     // On lance sans attendre (asynchrone) pour que le port reste actif
     system(cmd); 
+    printf("[*] Simulation active. Le Proxy attend le lecteur...\n");
+    //le sim bloque toute interaction tant qu'il est actif, il faut le lancer avant d'ouvrir les ports COM en C pour le relai --< comment ?
+   
 }
 
 // --- LOGIQUE DE RELAI (THREADS) ---
@@ -90,6 +93,7 @@ int main() {
     // le port COM peut être occupé par le client PM3.
     // Il vaut mieux lancer la sim, puis fermer le client, et reprendre le port en C.
     start_proxy_sim(uid);
+    printf("On ne lance pas le sim - simulation en TR");
 
     // 3. Ouverture des ports pour le relai de données brutes
     HANDLE hProxy = CreateFile("\\\\.\\" PROXY_PORT, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
