@@ -94,6 +94,8 @@ int get_version(nfc_context * context, nfc_device * device, int res){
     return res;
 }
 
+
+//================== PWD_AUTH ======================
 int pwd_auth(nfc_context * context, nfc_device * device, int res, uint8_t *  pwd){
     uint8_t pwd_auth[5];
     pwd_auth[0] = 0x1b;
@@ -152,9 +154,11 @@ int main() {
 
     printf("Lecteur NFC prêt\n");
 
+
+
     //======================= REQA / WUPA ========================
 
-    // Enelver crc et parite pour REQA/WUPA
+    // Enlever crc et parite pour REQA/WUPA
     nfc_device_set_property_bool(device, NP_EASY_FRAMING, false);
     nfc_device_set_property_bool(device, NP_AUTO_ISO14443_4, false);
     nfc_device_set_property_bool(device, NP_HANDLE_CRC, false);
@@ -162,18 +166,21 @@ int main() {
     uint8_t reqa = 0x26; 
     uint8_t atqa[2];
     uint8_t atqa_bits;
+    int res;
 
-    // Envoyer REQA
-    int res = nfc_initiator_transceive_bits(device, &reqa, 7, NULL, atqa, sizeof(atqa), &atqa_bits);
-    if (res > 0) {
-        printf("REQA envoyé -> ATQA reçu: %02x %02x\n", atqa[0], atqa[1]);
-    } else {
-        printf("Erreur REQA: %s\n", nfc_strerror(device));
-        nfc_close(device);
-        nfc_exit(context);
-        exit(EXIT_FAILURE);
+    printf("En attente d'un tag...\n");
+    
+    while (1){
+        // Envoyer REQA
+        res = nfc_initiator_transceive_bits(device, &reqa, 7, NULL, atqa, sizeof(atqa), &atqa_bits);
+        if (res > 0) {
+            printf("TAG DETECTE !\n");
+            printf("\n");
+            printf("REQA envoyé -> ATQA reçu: %02x %02x\n", atqa[0], atqa[1]);
+            break;
+        } 
+        usleep(200000);
     }
-
 
     //========================== ANTICOLLISION 1 ============================
 
@@ -260,12 +267,15 @@ int main() {
         printf("%02X ", uid[i]);
     printf("\n");
 
+
+
+
     uint8_t data [4] = {0xff, 0xff, 0xff, 0xff};
     reader_read(device, 0x05);
     //reader_write( device, 0x05, data);
     //reader_read(device, 0x05);
-    get_version(context, device, res);
-    read_sig(context, device, res);
+    //get_version(context, device, res);
+    //read_sig(context, device, res);
 
 
 
