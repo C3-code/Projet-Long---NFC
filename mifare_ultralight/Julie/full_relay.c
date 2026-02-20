@@ -9,6 +9,33 @@ Ensuite, tape une commande hf 14a raw. Regarde dans le dossier client/logs/ (si 
 ou utilise un Serial Port Monitor gratuit. Tu verras les octets exacts envoyés. Si tu vois 43 48 au début de chaque paquet, 
 le code est sur la bonne voie.*/
 
+/*Si jamais le code reste muet : 
+// Commande pour faire clignoter les LEDs (ID souvent 0x0103)
+send_pm3_raw(hMole, 0x0103, NULL, 0);
+Si les LEDs ne bougent pas, c'est que soit le Baudrate est faux, soit le Preamble est mal interprété par le firmware.
+
+Le sniff_ports est ton meilleur ami. Si après 5 secondes il est vide :
+Vitesse (Baudrate) : Change CBR_115200 par CBR_460800 dans open_serial. Les firmwares Iceman/RRG modernes utilisent souvent 460800.
+Le Préambule : Tu as mis 0x4843 dans send_pm3_raw (Correct pour envoyer 'CH' vers le PM3) et tu vérifies 0x4348 dans start_relay 
+(Correct pour recevoir 'HC' du PM3). Cependant, vérifie dans ton sniffer si tu ne vois pas 50 4d 33 (PM3). 
+Certains firmwares utilisent un préambule différent.
+
+Problème de bufferisation Windows
+Windows a tendance à garder les octets en mémoire pour optimiser les transferts. 
+Si rien ne s'affiche, force la lecture en ajoutant ceci dans open_serial :
+PurgeComm(hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR | PURGE_RXABORT | PURGE_TXABORT);
+
+Les IDs que tu as définis sont "probables" mais pas universels.
+Si get_uid_from_mole échoue : C'est que PM3_CMD_HF_ISO14443A_READER_RAW (0x0385) n'est pas le bon ID pour ton firmware.
+Solution : Ouvre ton client Proxmark officiel, tape hf 14a raw 26, et regarde dans le log quel ID de commande est envoyé au matériel.
+
+Voici où la donnée peut se perdre :
+PC -> Proxy : Le port COM est-il ouvert par un autre processus (ex: un client PM3 oublié) ?
+Proxy -> PC : Le firmware n'envoie rien si l'antenne n'est pas active ou si aucune trame n'est reçue du lecteur.
+Mole -> Tag : Si get_uid_from_mole ne renvoie rien, vérifie que le tag est bien positionné.
+*/
+
+
 
 
 #define PROXY_PORT "\\\\.\\COM9"
@@ -188,6 +215,36 @@ void send_pm3_raw(HANDLE h, uint16_t cmd, uint8_t* data, uint16_t len) {
     }
 }
 
+
+// --- MODE HARDCORE DEBUG : RELAI BRUT ---
+void hardcore_debug_relay(HANDLE hProxy, HANDLE hMole) {
+    uint8_t buf[2048];
+    DWORD bytes;
+
+    printf("\n[!!!] MODE DEBUG HARDCORE ACTIF [!!!]\n");
+    printf("[*] Tout ce qui passe par COM9 sera envoye sur COM10 et vice versa.\n");
+    printf("[*] Appuyez sur Ctrl+C pour arreter.\n\n");
+
+    while (1) {
+        // Sens : LECTEUR (Proxy) -> TAG (Mole)
+        if (ReadFile(hProxy, buf, sizeof(buf), &bytes, NULL) && bytes > 0) {
+            hex_dump("PROXY >> MOLE", buf, bytes);
+            DWORD written;
+            WriteFile(hMole, buf, bytes, &written, NULL);
+        }
+
+        // Sens : TAG (Mole) -> LECTEUR (Proxy)
+        if (ReadFile(hMole, buf, sizeof(buf), &bytes, NULL) && bytes > 0) {
+            hex_dump("MOLE >> PROXY", buf, bytes);
+            DWORD written;
+            WriteFile(hProxy, buf, bytes, &written, NULL);
+        }
+        
+        // On ne met pas de Sleep(1) ici pour une reactivite maximale, 
+        // ou alors un tres court.
+    }
+}
+
 // Fonction de relai principale
 void start_relay(HANDLE hProxy, HANDLE hMole) {
     uint8_t buffer[1024];
@@ -201,7 +258,8 @@ void start_relay(HANDLE hProxy, HANDLE hMole) {
             PM3Packet* pkt = (PM3Packet*)buffer;
             
             // On vérifie si c'est une trame reçue du lecteur
-            if (pkt->preamble == 0x4348) {
+            if (pkt->preamble == 0x4348) { //si on sniff des trucs mais que ca démarre pas, remplacer le if par : 
+                //if (memcmp(buffer, "CH", 2) == 0 || memcmp(buffer, "HC", 2) == 0)
                 printf("[LECTEUR] Commande: %02X (len %d)\n", pkt->data[0], pkt->length);
                 
                 // 2. Relayer vers le MOLE (PC -> Tag)
@@ -280,6 +338,9 @@ int main() {
     //send_pm3_raw(hProxy, PM3_CMD_HF_ISO14443A_SIM_RAW, sim_setup, 8);
 
     start_relay(hProxy, hMole);
+
+    //Si jamais ca bug, fct de relai hardcore pour tout envoyer brut sans interprétation
+    //hardcore_debug_relay(hProxy, hMole);
 
     CloseHandle(hProxy);
     CloseHandle(hMole);
