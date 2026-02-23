@@ -1,4 +1,4 @@
-cat << 'EOF' > relai.c
+//cat << 'EOF' > relai.c
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,7 +63,9 @@ int main() {
 
     nt.nti.nai.btSak = 0x00;
 
-    if (nfc_target_init(dev_emulator, &nt, NULL, 0) < 0) {
+    uint8_t init_rx[MAX_FRAME_LEN];
+
+    if (nfc_target_init(dev_emulator, &nt, init_rx, sizeof(init_rx), 0) < 0) {
         printf("Erreur init target\n");
         return -1;
     }
@@ -112,4 +114,4 @@ int main() {
 
     return 0;
 }
-EOF
+//EOF
