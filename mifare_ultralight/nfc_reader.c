@@ -1,324 +1,319 @@
-#include <err.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <nfc/nfc.h>
-#include <freefare.h>
-#include <unistd.h> 
 #include <string.h>
-
-int main(int argc, char *argv[])
+#include <unistd.h>
+#include <nfc/nfc.h>
+#include <err.h>
+#include <freefare.h>
+// =================== PRINT MEMORY =======================
+int print_memory(nfc_device *device)
 {
-    int error = EXIT_SUCCESS;
-    nfc_device *device = NULL;
-    FreefareTag *tags = NULL;
+    uint8_t start_page = 0x00;
+    uint8_t end_page   = 0x2C;
+    uint8_t cmd[3] = {0x3A, start_page, end_page};
+    int total_pages = end_page - start_page + 1;
+    int expected_len = total_pages * 4;
+    uint8_t data[expected_len];
 
-    if (argc > 1)
-	errx(EXIT_FAILURE, "usage: %s", argv[0]);
+    int res = nfc_initiator_transceive_bytes(device, cmd, sizeof(cmd), data, expected_len, -1);
+
+    if (res != expected_len) {
+        printf("FAST_READ erreur (res=%d)\n", res);
+        return -1;
+    }
+
+    printf("====== NTAG213 MEMORY ======\n");
+
+    for (int page = 0; page < total_pages; page++) {
+        printf("Page %02X: ", start_page + page);
+
+        for (int byte = 0; byte < 4; byte++) {
+            printf("%02X ", data[page * 4 + byte]);
+        }
+
+        printf("\n");
+    }
+
+    printf("==================================\n");
+
+    return 0;
+}
+
+
+
+//========================= READ ==========================
+int reader_read(nfc_device *device, uint8_t page)
+{
+    uint8_t read[2] = {0x30, page};
+    uint8_t data[16];
+
+    int res = nfc_initiator_transceive_bytes(device, read, sizeof(read), data, sizeof(data), -1);
+
+    if (res == 16) {
+        printf("READ page %02X: ", page);
+        for (int i = 0; i < 16; i++)
+            printf("%02X ", data[i]);
+        printf("\n");
+        return 0;
+    } else {
+        printf("READ erreur (res=%d)\n", res);
+        return -1;
+    }
+}
+
+//========================= WRITE ==========================
+int reader_write(nfc_device *device, uint8_t page, uint8_t *data)
+{
+    uint8_t write[6];
+    uint8_t ack[1];
+
+    write[0] = 0xA2;
+    write[1] = page;
+
+    for (int i = 0; i < 4; i++)
+        write[i + 2] = data[i];
+
+    int res = nfc_initiator_transceive_bytes(device, write, sizeof(write), ack, sizeof(ack), -1);
+
+    // Cas normal
+    if (res == 1 && ack[0] == 0x0A) {
+        printf("WRITE OK \n");
+        return 0;
+    }
+    // Cas fréquent NTAG : erreur RF mais écriture OK
+    if (res < 0) {
+        printf("WRITE (ACK mal interprété, res=%d)\n", res);
+        return 0;   // on considère OK
+    }
+    printf("WRITE FAIL (res=%d, ack=0x%02X)\n",res,(res > 0) ? ack[0] : 0);
+    return -1;
+}
+
+//====================== READ_SIG ======================
+int read_sig(nfc_context * context, nfc_device * device, int res){
+    uint8_t read_sig[] = {0x3c, 0x00};
+    uint8_t sig[32];
+
+    res = nfc_initiator_transceive_bytes(device, read_sig, sizeof(read_sig), sig, sizeof(sig), -1);
+    if (res > 0) {
+        printf("READ_SIG -> SIG: ");
+        for (int i = 0; i < 32; i++)
+            printf("%02x ", sig[i]);
+        printf("\n");
+    } else {
+        printf("Erreur READ_SIG: %s\n", nfc_strerror(device));
+        nfc_close(device);
+        nfc_exit(context);
+        exit(EXIT_FAILURE);
+    }
+    return res;
+}
+
+//====================== GET_VERSION ======================
+int get_version(nfc_context * context, nfc_device * device, int res){
+    uint8_t get_version[] = {0x60};
+    uint8_t version[8];
+
+    res = nfc_initiator_transceive_bytes(device, get_version, sizeof(get_version), version, sizeof(version), -1);
+    if (res > 0) {
+        printf("GET_VERSION -> VERSION: ");
+        for (int i = 0; i < 8; i++)
+            printf("%02x ", version[i]);
+        printf("\n");
+    } else {
+        printf("Erreur GET_VERSION: %s\n", nfc_strerror(device));
+        nfc_close(device);
+        nfc_exit(context);
+        exit(EXIT_FAILURE);
+    }
+    return res;
+}
+
+
+//================== PWD_AUTH ======================
+int pwd_auth(nfc_device * device, uint8_t *  pwd, uint8_t * pack){
+    uint8_t pwd_auth[5];
+    pwd_auth[0] = 0x1b;
+    for (int i = 0; i < 4; i++)
+        pwd_auth[i + 1] = pwd[i];
+
+    int res = nfc_initiator_transceive_bytes(device, pwd_auth, sizeof(pwd_auth), pack, sizeof(pack), -1);
+    if (res > 0) {
+        printf("PWD_AUTH -> OK -> PACK: ");
+        for (int i = 0; i < 2; i++)
+            printf("%02x ", pack[i]);
+        printf("\n");
+        return 0;
+    } else {
+        printf("Erreur PWD_AUTH: %s\n", nfc_strerror(device));
+        return -1;
+    }    
+}
+
+
+
+int main() {
+    nfc_context *context;
+    nfc_device *device;
+    nfc_init(&context);
+    if (!context) {
+        fprintf(stderr, "Impossible d'initialiser libnfc\n");
+        exit(EXIT_FAILURE);
+    }
 
     nfc_connstring devices[8];
-    size_t device_count;
+    size_t device_count = nfc_list_devices(context, devices, 8);
+    if (device_count <= 0) {
+        fprintf(stderr, "Aucun lecteur NFC détecté\n");
+        nfc_exit(context);
+        exit(EXIT_FAILURE);
+    }
 
-    nfc_context *context;
-    nfc_init(&context);
-    if (context == NULL)
-	errx(EXIT_FAILURE, "Unable to init libnfc (malloc)");
+    device = nfc_open(context, devices[0]);
+    if (!device) {
+        fprintf(stderr, "Impossible d'ouvrir le lecteur\n");
+        nfc_exit(context);
+        exit(EXIT_FAILURE);
+    }
 
-    device_count = nfc_list_devices(context, devices, sizeof(devices) / sizeof(*devices));
-    if (device_count <= 0)
-	errx(EXIT_FAILURE, "No NFC device found");
+    if (nfc_initiator_init(device) < 0) {
+        nfc_perror(device, "nfc_initiator_init");
+        nfc_close(device);
+        nfc_exit(context);
+        exit(EXIT_FAILURE);
+    }
 
-    for (size_t d = 0; d < device_count; d++) {
-	if (!(device = nfc_open(context, devices[d]))) {
-	    warnx("nfc_open() failed.");
-	    error = EXIT_FAILURE;
-	    continue;
-	}
-
-	//Initialize reader
-
-	if (nfc_initiator_init(device) < 0) {
-		nfc_perror(device, "nfc_initiator_init");
-		exit(EXIT_FAILURE);
-	}
-
-	const nfc_modulation nm = {
-		.nmt = NMT_ISO14443A,
-		.nbr = NBR_106,
-	};
-
-	nfc_target nt;
-
-
-	if (nfc_initiator_select_passive_target(device, nm, NULL, 0, &nt) > 0) {
-		printf("UID: ");
-		for (size_t i = 0; i < nt.nti.nai.szUidLen; i++)
-			printf("%02x ", nt.nti.nai.abtUid[i]);
-		printf("\n");
-	} else {
-		printf("Aucun tag détecté\n");
-	}
-
-	/* nfc_initiator_select_passive_target : 
-	- met le device en mode initiateur
-	- envoi les reqa et wupa
-	- gere anticollision et selection du tag
-	- rempli la structure nfc_targe avec les infos du tag : uid, atqa, sak et type de tag	
-	if (nfc_initiator_select_passive_target(
-			device,
-			nm,
-			NULL,
-			0,
-			&nt) > 0) {
-
-		printf("UID: ");
-		for (size_t i = 0; i < nt.nti.nai.szUidLen; i++)
-			printf("%02x ", nt.nti.nai.abtUid[i]);
-		printf("\n");
-	}
-
-	
-	/*
-	//Initialize reader
-
-	if (nfc_initiator_init(device) < 0) {
-		nfc_perror(device, "nfc_initiator_init");
-		exit(EXIT_FAILURE);
-	}
-
-	//Deactivate CRC for REQA and WUPA
-
-	nfc_device_set_property_bool(device, NP_HANDLE_CRC, false);
-	nfc_device_set_property_bool(device, NP_HANDLE_PARITY, false);
-	nfc_device_set_property_bool(device, NP_AUTO_ISO14443_4, false);
-
-
-	uint8_t wupa = 0x52;   // Wake Up
-	uint8_t reqa = 0x26;   // Request
-	uint8_t atqa[2];
-	uint8_t atqa_bits;
-
-	while (1) {
-		// Send WUPA
-		int res = nfc_initiator_transceive_bits(device, &wupa, 7, NULL, atqa, sizeof(atqa),	&atqa_bits);
-		if (res < 0) {
-			printf("Erreur: %s\n", nfc_strerror(device));
-		}
-		if (res >= 0) {
-			printf("Réveil OK via WUPA. ATQA: %02x %02x\n", atqa[0], atqa[1]);
-			break;
-		}
-
-		// Send REQA
-		res = nfc_initiator_transceive_bits(device, &reqa, 7, NULL, atqa, sizeof(atqa), &atqa_bits);
-		if (res < 0) {
-			printf("Erreur: %s\n", nfc_strerror(device));
-		}
-		if (res >= 0) {
-			printf("Détection via REQA. ATQA: %02x %02x\n", atqa[0], atqa[1]);
-			break;
-		}
-
-		usleep(50000); // 50ms pour éviter surcharge RF
-	}
-
-	printf("In Ready 1 state \n");
-
-	//Activate CRC 
-
-	nfc_device_set_property_bool(device, NP_HANDLE_CRC, true);
-	nfc_device_set_property_bool(device, NP_HANDLE_PARITY, true);
-
-	if (!nfc_device_set_property_bool(device, NP_HANDLE_CRC, true))
-	    printf("CRC set failed\n");
-
-
-	//Send Anticollision CL1
-	uint8_t anticoll_cl1[] = { 0x93, 0x20 };
-	uint8_t uid_cl1[5]; // 4 bytes UID + 1 BCC
-
-	int res = nfc_initiator_transceive_bytes(device, anticoll_cl1, sizeof(anticoll_cl1), uid_cl1, sizeof(uid_cl1), -1);
-	if (res == 5) {
-		printf("ok\n");
-	} else {
-		printf("Recu %d bytes\n", res);
-	}
-
-	if (res >= 0) {
-		printf("UID CL1: ");
-		for (int i = 0; i < 5; i++)
-			printf("%02x ", uid_cl1[i]);
-		printf("\n");
-	} 
-	else {
-		printf("Erreur anticollision: %s\n", nfc_strerror(device));
-	}
-
-	//Select CL1
-
-	uint8_t select_cl1[7];
-
-	select_cl1[0] = 0x93;
-	select_cl1[1] = 0x70;
-	memcpy(&select_cl1[2], uid_cl1, 5);
-
-	uint8_t sak;
-
-	res = nfc_initiator_transceive_bytes(
-		device,
-		select_cl1,
-		sizeof(select_cl1),
-		&sak,
-		1,
-		-1
-	);
-
-	if (res >= 0) {
-		printf("SAK CL1: %02x\n", sak);
-	}
-
-	//Anticollision CL2
-
-	uint8_t anticoll_cl2[] = { 0x95, 0x20 };
-	uint8_t uid_cl2[5];
-
-	res = nfc_initiator_transceive_bytes(
-		device,
-		anticoll_cl2,
-		sizeof(anticoll_cl2),
-		uid_cl2,
-		sizeof(uid_cl2),
-		-1
-	);
-
-	if (res >= 0) {
-		printf("UID CL2: ");
-		for (int i = 0; i < 5; i++)
-			printf("%02x ", uid_cl2[i]);
-		printf("\n");
-	}
-
-	//Select CL2
-
-	uint8_t select_cl2[7];
-
-	select_cl2[0] = 0x95;
-	select_cl2[1] = 0x70;
-	memcpy(&select_cl2[2], uid_cl2, 5);
-
-	res = nfc_initiator_transceive_bytes(
-		device,
-		select_cl2,
-		sizeof(select_cl2),
-		&sak,
-		1,
-		-1
-	);
-
-	if (res >= 0) {
-		printf("SAK final: %02x\n", sak);
-	}*/
+    printf("Lecteur NFC prêt\n");
 
 
 
+    //======================= REQA / WUPA ========================
 
-	if (!(tags = freefare_get_tags(device))) {
-	    nfc_close(device);
-	    errx(EXIT_FAILURE, "Error listing tags.");
-	}
+    // Enlever crc et parite pour REQA/WUPA
+    nfc_device_set_property_bool(device, NP_EASY_FRAMING, false);
+    nfc_device_set_property_bool(device, NP_AUTO_ISO14443_4, false);
+    nfc_device_set_property_bool(device, NP_HANDLE_CRC, false);
 
-	for (int i = 0; (!error) && tags[i]; i++) {
-	    switch (freefare_get_tag_type(tags[i])) {
-	    case MIFARE_ULTRALIGHT:
-            printf("MIFARE_ULTRALIGHT\n");
+    uint8_t reqa = 0x26; 
+    uint8_t atqa[2];
+    uint8_t atqa_bits;
+    int res;
+
+    printf("En attente d'un tag...\n");
+    
+    while (1){
+        // Envoyer REQA
+        res = nfc_initiator_transceive_bits(device, &reqa, 7, NULL, atqa, sizeof(atqa), &atqa_bits);
+        if (res > 0) {
+            printf("TAG DETECTE !\n");
+            printf("\n");
+            printf("REQA envoyé -> ATQA reçu: %02x %02x\n", atqa[0], atqa[1]);
             break;
-	    case MIFARE_ULTRALIGHT_C:
-            printf("MIFARE_ULTRALIGHT_C\n");
-            break;
-        case MIFARE_CLASSIC_1K:
-            printf("MIFARE_CLASSIC_1K\n");
-            break;
-        case MIFARE_DESFIRE:
-            printf("MIFARE_DESFIRE\n");
-            break;
-        case NTAG_21x:
-            printf("NTAG_21x\n");
-            break;
-	    default:
-            printf("OTHER\n");
-		continue;
-	    }
+        } 
+        usleep(200000);
+    }
 
-	    char *tag_uid = freefare_get_tag_uid(tags[i]);
-	    printf("Tag with UID %s is a %s\n", tag_uid, freefare_get_tag_friendly_name(tags[i]));
-	    FreefareTag tag = tags[i];
-	    int res;
+    //========================== ANTICOLLISION 1 ============================
 
-	    if (ntag21x_connect(tag) < 0)
-		errx(EXIT_FAILURE, "Error connecting to tag.");
+    // Anticollision CL1
+    uint8_t anticoll_cl1[] = {0x93, 0x20};
+    uint8_t uid_cl1[5]; // 4 octets UID + 1 BCC
 
-	    uint8_t data [4] = {0xfa, 0xca, 0xac, 0xad}; // Data to write on tag
-	    uint8_t read[4]; // Buffer for reading data from tag
+    res = nfc_initiator_transceive_bytes(device, anticoll_cl1, sizeof(anticoll_cl1), uid_cl1, sizeof(uid_cl1), -1);
+    if (res > 0) {
+        printf("ANTICOLLISION CL1 -> UID: ");
+        for (int i = 0; i < 5; i++)
+            printf("%02x ", uid_cl1[i]);
+        printf("\n");
+    } else {
+        printf("Erreur ANTICOLLISION CL1: %s\n", nfc_strerror(device));
+        nfc_close(device);
+        nfc_exit(context);
+        exit(EXIT_FAILURE);
+    }
 
-	    bool flag_match = true;
-	    switch (true) {
-	    case true:
-		/*
-		   Get information about tag
-		   MUST do, because here we are recognizing tag subtype (NTAG213,NTAG215,NTAG216), and gathering all parameters
-		   */
-		res = ntag21x_get_info(tag); //COMMAND 60h = GET_VERSION
-		if (res < 0) {
-		    printf("Error getting info from tag\n");
-		    break;
-		}
-
-        enum ntag_tag_subtype subtype = ntag21x_get_subtype(tag);
-
-        switch (subtype) {
-        case NTAG_213:
-            printf("Subtype: NTAG213\n");
-            break;
-        case NTAG_215:
-            printf("Subtype: NTAG215\n");
-            break;
-        case NTAG_216:
-            printf("Subtype: NTAG216\n");
-            break;
-        default:
-            printf("Subtype inconnu\n");
-            break;
+    // Sélection CL1
+    uint8_t select_cl1[7] = {0x93, 0x70};
+    memcpy(&select_cl1[2], uid_cl1, 5);
+    uint8_t sak;
+    // Activer CRC pour select
+    nfc_device_set_property_bool(device, NP_HANDLE_CRC, true);
+    res = nfc_initiator_transceive_bytes(device, select_cl1, sizeof(select_cl1), &sak, 1, -1);
+    if (res > 0) {
+        printf("SELECT CL1 -> SAK: %02x\n", sak);
+    } else {
+        printf("Erreur SELECT CL1: %s\n", nfc_strerror(device));
+        nfc_close(device);
+        nfc_exit(context);
+        exit(EXIT_FAILURE);
     }
 
 
-		// writing to tag 4 bytes on page 0x27 (check specs for NTAG21x before changing page number !!!)
-		res = ntag21x_write(tag, 0x27, data);
-		if (res < 0) {
-		    printf("Error writing to tag\n");
-		    break;
-		}
-		res = ntag21x_fast_read4(tag, 0x27, read); // Reading page from tag (4 bytes), you can also use ntag21x_read4 or ntag21x_read (16 bytes) or ntag21x_fast_read (start_page to end_page)
-		if (res < 0) {
-		    printf("Error reading tag\n");
-		    break;
-		}
-		for (int i = 0; i < 4; i++) // Checking if we can read what we have written earlyer
-		    if (data[i] != read[i]) {
-			flag_match = false;
-			break;
-		    }
-		if (!flag_match)
-		    printf("Data don't match\n");
-		else
-		    printf("Data match\n");
-	    }
-	    ntag21x_disconnect(tag);
-	    free(tag_uid);
-	}
 
-	freefare_free_tags(tags);
-	nfc_close(device);
+    //========================== ANTICOLLISION 2 ===========================
+
+    uint8_t anticoll_cl2[] = {0x95, 0x20};
+    uint8_t uid_cl2[5];
+
+
+    // Vérifier si le tag a CL2 (UID > 4 octets)
+    if (sak == 0x04) { 
+        // Anticollision CL2
+        
+        nfc_device_set_property_bool(device, NP_HANDLE_CRC, false);
+        res = nfc_initiator_transceive_bytes(device, anticoll_cl2, sizeof(anticoll_cl2), uid_cl2, sizeof(uid_cl2), -1);
+        if (res > 0) {
+            printf("ANTICOLLISION CL2 -> UID: ");
+            for (int i = 0; i < 5; i++)
+                printf("%02x ", uid_cl2[i]);
+            printf("\n");
+        }
+
+        // Sélection CL2
+        uint8_t select_cl2[7] = {0x95, 0x70};
+        memcpy(&select_cl2[2], uid_cl2, 5);
+        nfc_device_set_property_bool(device, NP_HANDLE_CRC, true);
+        res = nfc_initiator_transceive_bytes(device, select_cl2, sizeof(select_cl2), &sak, 1, -1);
+        if (res < 0) {
+			printf("Erreur: %s %d\n", nfc_strerror(device), res);
+		}
+        if (res > 0) {
+            printf("SELECT CL2 -> SAK final: %02x\n", sak);
+        }
+    } else {
+        printf("Tag UID complet en CL1, pas de CL2\n");
     }
 
+
+    //========================= UID ==========================
+
+    printf("UID final: ");
+    uint8_t uid[7];
+    for (int i = 0; i < 3; i++)
+        uid[i] = uid_cl1[i+1]; 
+    
+    for (int i = 0 ; i< 4; i++)
+        uid[i+3] = uid_cl2[i];
+    for (int i = 0; i < 7; i++)
+        printf("%02X ", uid[i]);
+    printf("\n");
+
+
+    uint8_t pwd [4] = {0xEE, 0xEE, 0xEE, 0xEE};
+    uint8_t pack [2] = {0x11, 0x11};
+
+    uint8_t data [4] = {0xBB, 0xBB, 0xBB, 0xBB};
+    print_memory(device);
+    pwd_auth(device, pwd, pack);
+    //reader_write(device, 0x25, data);
+    //print_memory(device);
+    //reader_read(device, 0x10);
+    //get_version(context, device, res);
+    //read_sig(context, device, res);
+
+
+
+    nfc_close(device);
     nfc_exit(context);
-    printf("End ...\n");
-    exit(error);
+    return 0;
 }
