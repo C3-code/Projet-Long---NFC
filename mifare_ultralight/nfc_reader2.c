@@ -5,6 +5,41 @@
 #include <nfc/nfc.h>
 #include <err.h>
 #include <freefare.h>
+// =================== PRINT MEMORY =======================
+int print_memory(nfc_device *device)
+{
+    uint8_t start_page = 0x00;
+    uint8_t end_page   = 0x2C;
+    uint8_t cmd[3] = {0x3A, start_page, end_page};
+    int total_pages = end_page - start_page + 1;
+    int expected_len = total_pages * 4;
+    uint8_t data[expected_len];
+
+    int res = nfc_initiator_transceive_bytes(device, cmd, sizeof(cmd), data, expected_len, -1);
+
+    if (res != expected_len) {
+        printf("FAST_READ erreur (res=%d)\n", res);
+        return -1;
+    }
+
+    printf("====== NTAG213 MEMORY ======\n");
+
+    for (int page = 0; page < total_pages; page++) {
+        printf("Page %02X: ", start_page + page);
+
+        for (int byte = 0; byte < 4; byte++) {
+            printf("%02X ", data[page * 4 + byte]);
+        }
+
+        printf("\n");
+    }
+
+    printf("==================================\n");
+
+    return 0;
+}
+
+
 
 //========================= READ ==========================
 int reader_read(nfc_device *device, uint8_t page)
@@ -96,27 +131,23 @@ int get_version(nfc_context * context, nfc_device * device, int res){
 
 
 //================== PWD_AUTH ======================
-int pwd_auth(nfc_context * context, nfc_device * device, int res, uint8_t *  pwd){
+int pwd_auth(nfc_device * device, uint8_t *  pwd, uint8_t * pack){
     uint8_t pwd_auth[5];
     pwd_auth[0] = 0x1b;
     for (int i = 0; i < 4; i++)
         pwd_auth[i + 1] = pwd[i];
-    uint8_t pack[2];
 
-    res = nfc_initiator_transceive_bytes(device, pwd_auth, sizeof(pwd_auth), pack, sizeof(pack), -1);
+    int res = nfc_initiator_transceive_bytes(device, pwd_auth, sizeof(pwd_auth), pack, sizeof(pack), -1);
     if (res > 0) {
-        printf("PWD_AUTH -> PACK: ");
+        printf("PWD_AUTH -> OK -> PACK: ");
         for (int i = 0; i < 2; i++)
             printf("%02x ", pack[i]);
         printf("\n");
+        return 0;
     } else {
         printf("Erreur PWD_AUTH: %s\n", nfc_strerror(device));
-        nfc_close(device);
-        nfc_exit(context);
-        exit(EXIT_FAILURE);
-    }
-    return res;
-    
+        return -1;
+    }    
 }
 
 
@@ -268,12 +299,15 @@ int main() {
     printf("\n");
 
 
+    uint8_t pwd [4] = {0xEE, 0xEE, 0xEE, 0xEE};
+    uint8_t pack [2] = {0x11, 0x11};
 
-
-    uint8_t data [4] = {0xff, 0xff, 0xff, 0xff};
-    reader_read(device, 0x05);
-    //reader_write( device, 0x05, data);
-    //reader_read(device, 0x05);
+    uint8_t data [4] = {0xBB, 0xBB, 0xBB, 0xBB};
+    print_memory(device);
+    pwd_auth(device, pwd, pack);
+    //reader_write(device, 0x25, data);
+    //print_memory(device);
+    //reader_read(device, 0x10);
     //get_version(context, device, res);
     //read_sig(context, device, res);
 
