@@ -77,6 +77,14 @@ int main() {
 
     printf("=== SYSTEME DE RELAI PM3 ===\n");
 
+    /*
+    Etapes : 
+    hf mfu reader sur le mole pour se comporter en reader
+    Il faut enregistrer toute la communication pendant que le lecteur lit le tag (sniff ou trace)
+    Analyser la trace pour extraire l'UID et les éventuelles données d'auth
+    Comment enregistrer alors qu'on est en mode reader ? Pour moi, le sniff est bloquant (on peut rien faire d'autre en meme temps) et le trace list ne montre que les commandes envoyées, pas les réponses du tag. Il faudrait une commande qui affiche les échanges bruts (raw) pendant le sniff, ou un mode de trace plus détaillé.
+    */
+
     // 1. Récupération de l'UID réel sur le Mole
     get_uid_from_mole(uid);
     if (strlen(uid) == 0) {
