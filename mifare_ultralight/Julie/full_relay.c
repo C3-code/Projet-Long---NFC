@@ -38,7 +38,7 @@ Mole -> Tag : Si get_uid_from_mole ne renvoie rien, vérifie que le tag est bien
 
 
 
-#define PROXY_PORT "\\\\.\\COM9"
+#define PROXY_PORT "COM9"
 #define MOLE_PORT  "\\\\.\\COM10"
 
 // Codes de commande PM3
@@ -49,13 +49,11 @@ Mole -> Tag : Si get_uid_from_mole ne renvoie rien, vérifie que le tag est bien
 
 #pragma pack(push, 1)
 typedef struct {
-    uint16_t preamble; // 0x4348 ('CH')
-    uint16_t length;
-    uint16_t cmd; //id de la commande
+    uint32_t magic;    // 'PM3a' = 0x61334d50
+    uint16_t len_ng;   // Contient la longueur sur 15 bits + le bit NG
+    uint16_t cmd;
     uint8_t  data[512];
-    //Certaines versions demmandent un CRC16 à la fin
-    //uint16_t crc; 
-} PM3Packet;
+} PM3PacketNG;
 #pragma pack(pop)
 
 
@@ -99,10 +97,19 @@ HANDLE open_serial(const char* portName) {
     HANDLE hSerial = CreateFile(portName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (hSerial == INVALID_HANDLE_VALUE) return INVALID_HANDLE_VALUE;
 
+    
+
+
     DCB dcb = {0};
     dcb.DCBlength = sizeof(dcb);
     GetCommState(hSerial, &dcb);
-    dcb.BaudRate = CBR_115200; //Si le sniffer reste vide, essaie de changer CBR_115200 par CBR_460800
+    //dcb.fDtrControl = DTR_CONTROL_DISABLE;
+    //dcb.fRtsControl = RTS_CONTROL_DISABLE;
+    dcb.fDtrControl = DTR_CONTROL_ENABLE; // Indispensable pour réveiller le MCU
+    dcb.fRtsControl = RTS_CONTROL_ENABLE;
+    dcb.fOutX = FALSE;
+    dcb.fInX = FALSE;
+    dcb.BaudRate = 460800; //Si le sniffer reste vide, essaie de changer CBR_115200 par CBR_460800
     dcb.ByteSize = 8;
     dcb.StopBits = ONESTOPBIT;
     dcb.Parity   = NOPARITY;
@@ -113,6 +120,7 @@ HANDLE open_serial(const char* portName) {
     timeouts.ReadTotalTimeoutConstant = 1;
     timeouts.ReadTotalTimeoutMultiplier = 1;
     SetCommTimeouts(hSerial, &timeouts);
+    PurgeComm(hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR | PURGE_RXABORT | PURGE_TXABORT);
     return hSerial;
 }
 
@@ -127,7 +135,7 @@ void setup_proxy_with_real_uid(HANDLE hProxy, uint8_t* uid) {
 int get_uid_from_mole(HANDLE hMole, uint8_t* out_uid) {
     uint8_t buffer[1024];
     DWORD bytes;
-    PM3Packet* pkt = (PM3Packet*)buffer;
+    PM3PacketNG* pkt = (PM3PacketNG*)buffer;
 
     printf("[*] Demarrage de la sequence d'anticollision sur le MOLE...\n");
 
@@ -198,21 +206,30 @@ void sniff_ports(HANDLE hProxy, HANDLE hMole) {
     printf("[*] Fin du sniffing.\n\n");
 }
 
-// Envoyer une commande RAW au Proxmark
+// Fonction d'envoi robuste
 void send_pm3_raw(HANDLE h, uint16_t cmd, uint8_t* data, uint16_t len) {
-    PM3Packet pkt = {0};
-    pkt.preamble = 0x4843; // 'HC' pour indiquer une trame de commande (Host Command)
-    pkt.cmd = cmd;
-    pkt.length = len;
+    uint8_t buffer[600] = {0};
+    PM3PacketNG* pkt = (PM3PacketNG*)buffer;
+
+    pkt->magic = 0x61334d50; // "PM3a"
+    // On met le bit de poids fort (NG) à 1 et la longueur sur les 15 autres bits
+    pkt->len_ng = len | 0x8000; 
+    pkt->cmd = cmd;
+    
     if (len > 0 && data != NULL) {
-        memcpy(pkt.data, data, len);
+        memcpy(pkt->data, data, len);
     }
 
+    // Le placeholder CRC 'a3' doit être APRES les datas
+    uint16_t magic_crc = 0xe3a3; 
+    memcpy(&buffer[8 + len], &magic_crc, 2);
+
     DWORD written;
-    // On envoie le header (6 octets) + les datas
-    if (!WriteFile(h, &pkt, 6 + len, &written, NULL)) {
-        printf("[!] Erreur d'écriture sur le port COM\n");
+    if (!WriteFile(h, buffer, 8 + len + 2, &written, NULL)) {
+        printf("[!] Erreur WriteFile: %lu\n", GetLastError());
     }
+    // Force Windows à vider le buffer vers le matériel
+    FlushFileBuffers(h);
 }
 
 
@@ -255,22 +272,22 @@ void start_relay(HANDLE hProxy, HANDLE hMole) {
     while (1) {
         // 1. Lire depuis le PROXY (Lecteur -> PC)
         if (ReadFile(hProxy, buffer, sizeof(buffer), &bytesRead, NULL) && bytesRead > 6) {
-            PM3Packet* pkt = (PM3Packet*)buffer;
+            PM3PacketNG* pkt = (PM3PacketNG*)buffer;
             
             // On vérifie si c'est une trame reçue du lecteur
-            if (pkt->preamble == 0x4348) { //si on sniff des trucs mais que ca démarre pas, remplacer le if par : 
+            if (pkt->magic == 0x61334d50) { //si on sniff des trucs mais que ca démarre pas, remplacer le if par : 
                 //if (memcmp(buffer, "CH", 2) == 0 || memcmp(buffer, "HC", 2) == 0)
-                printf("[LECTEUR] Commande: %02X (len %d)\n", pkt->data[0], pkt->length);
+                printf("[LECTEUR] Commande: %02X (len %d)\n", pkt->data[0], pkt->len_ng & 0x7FFF);
                 
                 // 2. Relayer vers le MOLE (PC -> Tag)
                 // On utilise la commande 'hf 14a raw' sur le Mole
-                send_pm3_raw(hMole, PM3_CMD_HF_ISO14443A_READER_RAW, pkt->data, pkt->length);
+                send_pm3_raw(hMole, PM3_CMD_HF_ISO14443A_READER_RAW, pkt->data, pkt->len_ng & 0x7FFF);
 
                 // On boucle un peu car ReadFile peut être trop rapide
                 int retry = 0;
                 while (retry < 10) {
                     if (ReadFile(hMole, buffer, sizeof(buffer), &bytesRead, NULL) && bytesRead > 6) {
-                        PM3Packet* resp = (PM3Packet*)buffer;
+                        PM3PacketNG* resp = (PM3PacketNG*)buffer;
                         printf("[TAG] Réponse recue, renvoi au Proxy\n");
                         
                         // Si la réponse est une lecture de page (16 octets) ou une signature (32 octets)
@@ -283,7 +300,7 @@ void start_relay(HANDLE hProxy, HANDLE hMole) {
                         // }
 
                         // Renvoi au lecteur via le Proxy
-                        send_pm3_raw(hProxy, PM3_CMD_HF_ISO14443A_READER_RAW, resp->data, resp->length);
+                        send_pm3_raw(hProxy, PM3_CMD_HF_ISO14443A_READER_RAW, resp->data, resp->len_ng & 0x7FFF);
                         break;
                     }
                     Sleep(5); //Si on voit que ca répond pas, tester en mettant sleep(1) ou en le supprimant (délais)
@@ -298,16 +315,41 @@ void start_relay(HANDLE hProxy, HANDLE hMole) {
 int main() {
     printf("=== RELAI PM3 ULTRALIGHT EXPERT ===\n");
 
-    HANDLE hProxy = open_serial(PROXY_PORT);
-    HANDLE hMole  = open_serial(MOLE_PORT);
 
-    if (hProxy == INVALID_HANDLE_VALUE || hMole == INVALID_HANDLE_VALUE) {
-        printf("[!] Erreur : Impossible d'ouvrir les ports COM.\n");
+    HANDLE hProxy = open_serial(PROXY_PORT);
+    if (hProxy == INVALID_HANDLE_VALUE) {
+        printf("[!] Erreur : Impossible d'ouvrir le port PROXY (%s). Code erreur: %lu\n", PROXY_PORT, GetLastError());
         return 1;
     }
 
+    HANDLE hMole = open_serial(MOLE_PORT);
+    if (hMole == INVALID_HANDLE_VALUE) {
+        printf("[!] Erreur : Impossible d'ouvrir le port MOLE (%s). Code erreur: %lu\n", MOLE_PORT, GetLastError());
+        CloseHandle(hProxy); // On ferme le premier s'il était ouvert
+        return 1;
+    }
+
+    printf("[+] Ports ouverts avec succès : PROXY (%s) et MOLE (%s)\n", PROXY_PORT, MOLE_PORT);
+
     // 1. Sniffer pour vérifier les IDs de commande
     sniff_ports(hProxy, hMole);
+    printf("[*] Sniffer terminé. Vérifiez les IDs de commande et ajustez le code si nécessaire.\n");
+    send_pm3_raw(hMole, 0x0103, NULL, 0);
+
+
+    printf("[*] Tentative de clignotement LED (CMD 0x0103)...\n");
+    // On envoie la commande plusieurs fois pour être sûr
+    for(int i=0; i<3; i++) {
+        send_pm3_raw(hMole, 0x0103, NULL, 0);
+        Sleep(100);
+    }
+
+        printf("[*] Tentative de clignotement LED (CMD 0x0101)...\n");
+    // On envoie la commande plusieurs fois pour être sûr
+    for(int i=0; i<3; i++) {
+        send_pm3_raw(hMole, 0x0101, NULL, 0);
+        Sleep(100);
+    }
 
     // --- INITIALISATION DES PM3 ---
     // On met le Mole en mode Reader
