@@ -1,70 +1,73 @@
 cat << 'EOF' > mitm.c
-#include <windows.h>
 #include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <windows.h>
+#include "uart.h"
 
-// Structure pour passer les handles aux threads
-typedef struct {
-    HANDLE hInput;
-    HANDLE hOutput;
-    const char* direction;
-} BridgeData;
+#define PORT_MOLE  "COM9"
+#define PORT_PROXY "COM10"
+#define BAUD_RATE  115200
 
-// Fonction de configuration des ports
-void setupPort(HANDLE hSerial) {
-    DCB dcb = {0};
-    dcb.DCBlength = sizeof(dcb);
-    GetCommState(hSerial, &dcb);
-    dcb.BaudRate = CBR_9600; // À ajuster selon tes besoins
-    dcb.ByteSize = 8;
-    dcb.StopBits = ONESTOPBIT;
-    dcb.Parity = NOPARITY;
-    SetCommState(hSerial, &dcb);
+//Besoin de copier là où on execute les fonctions suivantes : 
+//comms.h
+//pm3_cmd.h 
+//util.h
 
-    COMMTIMEOUTS timeouts = {0};
-    timeouts.ReadIntervalTimeout = 1;
-    timeouts.ReadTotalTimeoutConstant = 1;
-    SetCommTimeouts(hSerial, &timeouts);
-}
 
-// Routine du thread qui lit sur un port et écrit sur l'autre
-DWORD WINAPI relay(LPVOID lpParam) {
-    BridgeData* data = (BridgeData*)lpParam;
-    char buffer[256];
-    DWORD bytesRead, bytesWritten;
+// Commande simplifiée pour passer en mode sniff/relais (exemple générique)
+// Note: Dans un vrai environnement PM3, ces commandes sont des paquets USB structurés.
+const uint8_t CMD_INIT_MOLE[]  = {0x01, 0x00, 0x0D, 0x00}; // Exemple de paquet PM3
+const uint8_t CMD_INIT_PROXY[] = {0x02, 0x00, 0x0D, 0x00}; 
 
+void relay_loop(serial_port sp1, serial_port sp2) {
+    uint8_t buffer[2048];
+    uint32_t len;
+    
+    printf("[!] Pont actif. Ctrl+C pour arreter.\n");
     while (1) {
-        if (ReadFile(data->hInput, buffer, sizeof(buffer), &bytesRead, NULL) && bytesRead > 0) {
-            WriteFile(data->hOutput, buffer, bytesRead, &bytesWritten, NULL);
-            printf("[%s] : %d octets translatés\n", data->direction, (int)bytesRead);
+        // Sens : Tag (Mole) -> Lecteur (Proxy)
+        if (uart_receive(sp1, buffer, sizeof(buffer), &len) == PM3_SUCCESS && len > 0) {
+            uart_send(sp2, buffer, len);
+            printf("Tag >> %u octets >> Lecteur\n", len);
         }
+        
+        // Sens : Lecteur (Proxy) -> Tag (Mole)
+        if (uart_receive(sp2, buffer, sizeof(buffer), &len) == PM3_SUCCESS && len > 0) {
+            uart_send(sp1, buffer, len);
+            printf("Lecteur << %u octets << Tag\n", len);
+        }
+        
+        Sleep(1); // Evite de consommer 100% du CPU
     }
-    return 0;
 }
 
 int main() {
-    // Utilisation du préfixe \\\\.\\ indispensable pour les ports au-delà de COM9
-    HANDLE hCom9 = CreateFile("\\\\.\\COM9", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-    HANDLE hCom10 = CreateFile("\\\\.\\COM10", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    serial_port spMole, spProxy;
 
-    if (hCom9 == INVALID_HANDLE_VALUE || hCom10 == INVALID_HANDLE_VALUE) {
-        printf("Erreur : Impossible d'ouvrir les ports. Verifie qu'ils ne sont pas deja utilises.\n");
-        return 1;
-    }
+    printf("--- DEMARRAGE MITM NFC ULTRALIGHT ---\n");
 
-    setupPort(hCom9);
-    setupPort(hCom10);
+    // Connexion au Mole
+    spMole = uart_open(PORT_MOLE, BAUD_RATE, false);
+    if (spMole == INVALID_SERIAL_PORT) return printf("Echec COM9\n"), 1;
+    
+    // Connexion au Proxy
+    spProxy = uart_open(PORT_PROXY, BAUD_RATE, false);
+    if (spProxy == INVALID_SERIAL_PORT) return printf("Echec COM10\n"), 1;
 
-    BridgeData d1 = {hCom9, hCom10, "COM9 -> COM10"};
-    BridgeData d2 = {hCom10, hCom9, "COM10 -> COM9"};
+    printf("[+] Ports ouverts. Initialisation des modes...\n");
 
-    printf("Pont bidirectionnel actif. Appuyez sur Ctrl+C pour arreter.\n---\n");
+    // On envoie les commandes pour mettre les PM3 dans le bon état
+    // Ici, on part du principe que tes PM3 ont un firmware capable de streamer le RAW
+    uart_send(spMole, CMD_INIT_MOLE, sizeof(CMD_INIT_MOLE));
+    uart_send(spProxy, CMD_INIT_PROXY, sizeof(CMD_INIT_PROXY));
 
-    // Création des deux threads pour la bidirectionnalité
-    CreateThread(NULL, 0, relay, &d1, 0, NULL);
-    relay(&d2); // Le thread principal s'occupe du second flux
+    Sleep(500); // Laisse le temps au firmware de changer d'état
 
-    CloseHandle(hCom9);
-    CloseHandle(hCom10);
+    relay_loop(spMole, spProxy);
+
+    uart_close(spMole);
+    uart_close(spProxy);
     return 0;
 }
 EOF
