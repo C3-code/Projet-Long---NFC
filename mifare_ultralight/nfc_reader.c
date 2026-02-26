@@ -303,13 +303,13 @@ int main() {
     uint8_t pack [2] = {0x11, 0x11};
 
     uint8_t data [4] = {0xBB, 0xBB, 0xBB, 0xBB};
-    print_memory(device);
+    //print_memory(device);
     pwd_auth(device, pwd, pack);
     //reader_write(device, 0x25, data);
     //print_memory(device);
     //reader_read(device, 0x10);
-    //get_version(context, device, res);
-    //read_sig(context, device, res);
+    get_version(context, device, res);
+    read_sig(context, device, res);
 
 
 
