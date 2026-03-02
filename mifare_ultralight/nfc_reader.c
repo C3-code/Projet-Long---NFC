@@ -203,7 +203,7 @@ int main() {
     
     while (1){
         // Envoyer REQA
-        res = nfc_initiator_transceive_bits(device, &reqa, 7, NULL, atqa, sizeof(atqa), &atqa_bits);
+        res = nfc_initiator_transceive_bits(device, &reqa, 2, NULL, atqa, sizeof(atqa), &atqa_bits);
         if (res > 0) {
             printf("TAG DETECTE !\n");
             printf("\n");
