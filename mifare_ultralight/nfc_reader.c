@@ -209,7 +209,7 @@ int main() {
             printf("\n");
             printf("REQA envoyé -> ATQA reçu: %02x %02x\n", atqa[0], atqa[1]);
             break;
-        } 
+        }   
         usleep(200000);
     }
 
