@@ -31,8 +31,8 @@ void proxy_emulator(void)
     uint8_t bcc2 = uid[3] ^ uid[4] ^ uid[5] ^ uid[6];
 
     while (1) {
-
-        len = iso14443a_receive(rx, sizeof(rx));
+        uint8_t par;
+        len = GetIso14443aCommandFromReader(rx, par, sizeof(rx));
         if (len <= 0)
             continue;
 
@@ -43,7 +43,7 @@ void proxy_emulator(void)
             iso14443a_transmit(tx, 2, 0); //répondre ATQA
             state = STATE_CL1;
         }
-
+        /*
         // ANTICOLLISION CL1
         else if (rx[0] == 0x93 && rx[1] == 0x20 && state == STATE_CL1) {
             tx[0] = 0x88;
@@ -77,7 +77,7 @@ void proxy_emulator(void)
             iso14443a_transmit(tx, 1, ISO14443A_APPEND_CRC);
             state = STATE_SELECTED;
         }
-
+        
         // MITM FORWARD
         else if (state == STATE_SELECTED) {
             // Envoyer commande lecteur → PC
@@ -89,7 +89,7 @@ void proxy_emulator(void)
             if (receive_ng(&resp) == PM3_SUCCESS && resp.cmd == CMD_USER_1) {
                 iso14443a_transmit(resp.data, resp.length, ISO14443A_APPEND_CRC);
             }
-        }
+        }*/
     }
 }
 /*void mole_reader(void)

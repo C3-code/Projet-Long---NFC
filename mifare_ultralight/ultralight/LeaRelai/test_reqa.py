@@ -97,6 +97,7 @@ def main():
 
     except KeyboardInterrupt:
         print("\nStopped")
+    ser.close()
 
 if __name__ == "__main__":
     main()

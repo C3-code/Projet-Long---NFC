@@ -134,14 +134,23 @@ int get_version(nfc_context * context, nfc_device * device, int res){
 int pwd_auth(nfc_device * device, uint8_t *  pwd, uint8_t * pack){
     uint8_t pwd_auth[5];
     pwd_auth[0] = 0x1b;
+    uint8_t result_pack[4];
+
     for (int i = 0; i < 4; i++)
         pwd_auth[i + 1] = pwd[i];
 
-    int res = nfc_initiator_transceive_bytes(device, pwd_auth, sizeof(pwd_auth), pack, sizeof(pack), -1);
+    int res = nfc_initiator_transceive_bytes(device, pwd_auth, sizeof(pwd_auth), result_pack, sizeof(result_pack), -1);
     if (res > 0) {
-        printf("PWD_AUTH -> OK -> PACK: ");
+        printf("PWD_AUTH -> OK -> ");
         for (int i = 0; i < 2; i++)
-            printf("%02x ", pack[i]);
+            printf("%02x ", result_pack[i]);
+        for (int i = 0; i < 2; i++){
+            if (! (pack[i] == result_pack[i])) {
+                printf("PACK NOT OK \n");
+                return -1;
+            }
+        }
+        printf("PACK OK");
         printf("\n");
         return 0;
     } else {
@@ -302,14 +311,14 @@ int main() {
     uint8_t pwd [4] = {0xEE, 0xEE, 0xEE, 0xEE};
     uint8_t pack [2] = {0x11, 0x11};
 
-    uint8_t data [4] = {0xBB, 0xBB, 0xBB, 0xBB};
+    uint8_t data [4] = {0xFF, 0xEE, 0xEE, 0xEE};
     //print_memory(device);
     pwd_auth(device, pwd, pack);
-    //reader_write(device, 0x25, data);
-    //print_memory(device);
-    //reader_read(device, 0x10);
-    get_version(context, device, res);
-    read_sig(context, device, res);
+    //reader_write(device, 0x2B, data);
+    print_memory(device);
+    //reader_read(device, 0x08);
+    //get_version(context, device, res);
+    //read_sig(context, device, res);
 
 
 
