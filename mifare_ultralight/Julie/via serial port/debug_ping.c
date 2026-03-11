@@ -4,7 +4,7 @@ cat << 'EOF' > test.c
 
 // int main() {
 //     // Correction du chemin pour Windows (pas de ./ et double backslash)
-//     // Si proxmark3.exe est dans le dossier courant, mets juste "proxmark3.exe"
+//
 //     char *command = "client\\proxmark3.exe -p COM10 -c \"hf 14a info\"";
     
 //     printf("Execution de la commande via le moteur Proxmark3...\n");
@@ -52,12 +52,12 @@ int main() {
     DCB dcb = {0};
     dcb.DCBlength = sizeof(dcb);
     GetCommState(h, &dcb);
-    dcb.BaudRate = 460800; // Vitesse v4.20728
+    dcb.BaudRate = 460800;
     dcb.fDtrControl = DTR_CONTROL_ENABLE;
     dcb.fRtsControl = RTS_CONTROL_ENABLE;
     SetCommState(h, &dcb);
 
-    // Structure NG d'après ton image
+    // Structure NG
     // Magic(4) + Len(2 avec bit NG) + Cmd(2) + CRC(2)
     uint8_t pkt[10] = {
         0x50, 0x4D, 0x33, 0x61, // 'P','M','3','a'
@@ -91,5 +91,3 @@ int main() {
     CloseHandle(h);
     return 0;
 }
-
-EOF

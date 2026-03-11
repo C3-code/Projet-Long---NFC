@@ -1,4 +1,3 @@
-cat << 'EOF' > pm3_relay.py
 import serial
 import time
 import re
@@ -26,8 +25,8 @@ def start_relay():
         mole = serial.Serial(MOLE_PORT, BAUD, timeout=0.01)
         print("[*] Ports série ouverts.")
 
-        # 1. Initialisation de l'UID sur le Proxy
-        # On suppose que tu connais l'UID (ex: 045978CA341290)
+        #Initialisation de l'UID sur le Proxy
+        #uid connu pour les tests, tester la suite
         uid = "045978CA341290"
         print(f"[*] Simulation de l'UID {uid}...")
         #send_cmd(proxy, f"hf 14a sim -t 2 -u {uid}")
@@ -51,7 +50,7 @@ def start_relay():
                     send_cmd(mole, f"hf 14a raw -akc {cmd_hex}")
                     
                     # LECTURE DU MOLE (Carte -> PC)
-                    # On boucle brièvement pour choper la réponse de la carte
+                    # On boucle pour récupérer la réponse de la carte
                     start_t = time.time()
                     while (time.time() - start_t) < 0.1: # Timeout 100ms
                         line_mole = mole.readline().decode(errors='ignore')
@@ -70,4 +69,3 @@ def start_relay():
 
 if __name__ == "__main__":
     start_relay()
-EOF

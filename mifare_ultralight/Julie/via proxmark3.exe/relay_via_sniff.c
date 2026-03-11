@@ -1,4 +1,3 @@
-cat << 'EOF' > naive.c
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
@@ -47,20 +46,20 @@ int main() {
 
     printf("=== AUTOMATE SNIFF > EMIT > LIST > REPLAY ===\n\n");
 
-    // 1. ARMEMENT DU SNIFFER (PM3_SNIFF)
+    //ARMEMENT DU SNIFFER (PM3_SNIFF)
     // On lance le snoop en arrière-plan (avec START sur Windows pour ne pas bloquer le C)
     printf("[1/4] Armement du sniffer sur %s...\n", PM3_SNIFF);
     sprintf(cmd, "start /B %s %s -c \"hf 14a sniff\"", PM3_PATH, PM3_SNIFF);
     system(cmd);
     Sleep(2000); // On laisse 2 secondes au firmware pour passer en mode snoop
 
-    // 2. ENVOI DE LA COMMANDE INITIALE (PM3_EMIT)
+    //ENVOI DE LA COMMANDE INITIALE (PM3_EMIT)
     printf("[2/4] PM3_1 envoie la commande source (REQA)...\n");
     sprintf(cmd, "%s %s -c \"hf 14a raw -a -k -c 26\"", PM3_PATH, PM3_EMIT);
     system(cmd);
     Sleep(1000);
 
-    // 3. ARRÊT DU SNOOP ET LECTURE (PM3_SNIFF)
+    //ARRÊT DU SNOOP ET LECTURE (PM3_SNIFF)
     //Attente de 5 secondes pour laisser le temps d'éteindre le sniff proprement
     printf("[*] Attente de 5 secondes pour laisser le temps d'arreter le sniff proprement...\n");
     Sleep(5000);
@@ -79,7 +78,7 @@ int main() {
         _pclose(fp);
     }
 
-    // 4. REJEU (PM3_SNIFF devient EMETTEUR)
+    //REJEU (PM3_SNIFF devient EMETTEUR)
     if (strlen(captured_hex) > 5) {
         printf("\n[!] TRAME DETECTEE : %s\n", captured_hex);
         printf("[4/4] PM3_2 rejoue la trame maintenant...\n");
@@ -96,4 +95,3 @@ int main() {
     getchar();
     return 0;
 }
-EOF

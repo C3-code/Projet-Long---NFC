@@ -1,4 +1,3 @@
-cat << 'EOF' > relay.c
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
@@ -46,7 +45,7 @@ void start_proxy_sim(const char* uid) {
     // On lance sans attendre (asynchrone) pour que le port reste actif
     system(cmd); 
     printf("[*] Simulation active. Le Proxy attend le lecteur...\n");
-    //le sim bloque toute interaction tant qu'il est actif, il faut le lancer avant d'ouvrir les ports COM en C pour le relai --< comment ?
+    //le sim bloque toute interaction tant qu'il est actif, il faut le lancer avant d'ouvrir les ports COM en C pour le relai --> comment ?
    
 }
 
@@ -85,7 +84,7 @@ int main() {
     Comment enregistrer alors qu'on est en mode reader ? Pour moi, le sniff est bloquant (on peut rien faire d'autre en meme temps) et le trace list ne montre que les commandes envoyées, pas les réponses du tag. Il faudrait une commande qui affiche les échanges bruts (raw) pendant le sniff, ou un mode de trace plus détaillé.
     */
 
-    // 1. Récupération de l'UID réel sur le Mole
+    //Récupération de l'UID réel sur le Mole
     get_uid_from_mole(uid);
     if (strlen(uid) == 0) {
         printf("[!] Impossible de lire le tag. Verifiez le Mole.\n");
@@ -96,14 +95,14 @@ int main() {
     }
     printf("[+] UID du tag detecte : %s\n", uid);
 
-    // 2. Initialisation du Proxy
-    // Note : Cette étape peut être complexe car une fois 'sim' lancé, 
+    //Initialisation du Proxy
+    // ette étape peut être complexe car une fois 'sim' lancé, 
     // le port COM peut être occupé par le client PM3.
     // Il vaut mieux lancer la sim, puis fermer le client, et reprendre le port en C.
     start_proxy_sim(uid);
     printf("On ne lance pas le sim - simulation en TR");
 
-    // 3. Ouverture des ports pour le relai de données brutes
+    //Ouverture des ports pour le relai de données brutes
     HANDLE hProxy = CreateFile("\\\\.\\" PROXY_PORT, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
     HANDLE hMole = CreateFile("\\\\.\\" MOLE_PORT, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
 
@@ -112,7 +111,7 @@ int main() {
         return 1;
     }
 
-    // 4. Lancement du relai bidirectionnel
+    //Lancement du relai bidirectionnel
     RelayParams p1 = { hProxy, hMole, "LECTEUR -> TAG" };
     RelayParams p2 = { hMole, hProxy, "TAG -> LECTEUR" };
 
@@ -124,4 +123,3 @@ int main() {
 
     return 0;
 }
-EOF

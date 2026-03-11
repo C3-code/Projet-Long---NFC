@@ -9,9 +9,11 @@ cat << 'EOF' > read.py
 // at your option, any later version. See the LICENSE.txt file for the text of
 // the license.
 //-----------------------------------------------------------------------------
-// Code to test Proxmark3 Standalone mode aka reblay by Salvador Mendoza
+// Code to test Proxmark3 Standalone mode aka reblay by Salvador Mendoza 
 //-----------------------------------------------------------------------------
 """
+
+#disponible dans le repo de proxmark3
 
 import serial
 #from smartcard.util import toHexString
@@ -74,4 +76,3 @@ for x in apdu:
   
 ser.write(b'1') #tell Proxmark3 that we finish the communication
 ser.close()
-EOF

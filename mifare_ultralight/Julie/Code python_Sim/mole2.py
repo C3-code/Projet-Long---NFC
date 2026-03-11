@@ -1,4 +1,3 @@
-cat << 'EOF' > emule.py
 import subprocess
 import re
 import time
@@ -20,12 +19,12 @@ def start_iso14443_init():
         while True:
             print("\n--- NOUVELLE TENTATIVE D'INITIALISATION ---")
             
-            # 1. REQA (Request A) - 7 bits, commande 26
+            #REQA (Request A) - 7 bits, commande 26
             # On utilise hf 14a raw avec l'option -s (send 7-bit) ou la commande dédiée
             print("[Lecteur >] REQA (0x26)")
             res_reqa = pm3_exec(f"hf 14a raw -s -k 26")
             
-            # 2. ANTICOLLISION (Cascade Level 1)
+            #ANTICOLLISION (Cascade Level 1)
             # Commande standard : 93 20
             print("[Lecteur >] ANTICOLLISION (93 20)")
             res_anti = pm3_exec(f"hf 14a raw -c -k 9320")
@@ -43,9 +42,9 @@ def start_iso14443_init():
             if uid:
                 print(f"[Lecteur <] UID reçu : {uid}")
                 
-                # 3. SELECT (Cascade Level 1)
+                #SELECT (Cascade Level 1)
                 # Commande : 93 70 + UID + BCC
-                # Note: hf 14a raw -c calcule automatiquement le CRC (70)
+                #hf 14a raw -c calcule automatiquement le CRC (70)
                 print(f"[Lecteur >] SELECT (93 70 {uid})")
                 res_sel = pm3_exec(f"hf 14a raw -c -k 9370{uid}")
                 
@@ -64,4 +63,3 @@ def start_iso14443_init():
 
 if __name__ == "__main__":
     start_iso14443_init()
-EOF

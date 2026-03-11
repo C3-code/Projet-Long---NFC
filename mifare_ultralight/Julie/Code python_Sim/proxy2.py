@@ -1,4 +1,3 @@
-cat << 'EOF' > proxy2.py
 import subprocess
 import socket
 import time
@@ -24,8 +23,8 @@ def start_proxy():
         #uid = s.recv(1024).decode()
         #print(f"[*] UID reçu : {uid}. Préparation du simulateur local...")
 
-        # 1. Configurer l'UID pour l'anticollision matérielle (HARDWARE)
-        # Cela gère REQA, WUPA, ANTICOLL, SELECT de façon autonome.
+        # Configurer l'UID pour l'anticollision matérielle (HARDWARE)
+        #gère REQA, WUPA, ANTICOLL, SELECT de façon autonome.
         #pm3_exec(f"hf mfu setuid {uid}")
 	    #print("[*] Début de simulation via uid")
 	    #pm3_exec(f"hf mfu sim -u {uid}")       
@@ -74,4 +73,3 @@ def start_proxy():
 
 if __name__ == "__main__":
     start_proxy()
-EOF

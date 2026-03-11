@@ -1,10 +1,7 @@
-cat << 'EOF' > mole.py
 import subprocess
 import socket
 import re
 import string
-
-#Code a copier coller dans proxmark3 -
 
 # --- CONFIGURATION ---
 PM3_PATH = "./client/proxmark3.exe"
@@ -69,4 +66,3 @@ def start_mole():
 
 if __name__ == "__main__":
     start_mole()
-EOF

