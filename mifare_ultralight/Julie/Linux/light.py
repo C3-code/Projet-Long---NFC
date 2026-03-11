@@ -73,7 +73,7 @@ send_ng(ser, CMD_LED, bytes([0xFF, 0x00, 0x00, 0x00]))  # LED rouge
 
 resp = read_ng(ser)
 if resp:
-    print(f"\nSUCCES! Réponse ping reçue")
+    print(f"\nSUCCES! Réponse Light reçue")
     print(f"  cmd=0x{resp['cmd']:04X} status={resp['status']}")
     print(f"  data={resp['data'].hex()}")
     if resp['data'] == ping_data:
